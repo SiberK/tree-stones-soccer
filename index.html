@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Футбол в три камня | Three-Stones-Soccer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Панель управления над игровым полем -->
+    <div id="controls">
+        <label for="spreadSlider">
+            Разброс удара: 
+            <span id="spreadValue">0.35</span>
+        </label>
+        <input type="range" id="spreadSlider" min="0.1" max="0.5" step="0.01" value="0.35">
+    </div>
+
+    <canvas id="gameCanvas" width="1200" height="800"></canvas>
+    <script type="module" src="dist/game.js"></script>
+</body>
+</html>

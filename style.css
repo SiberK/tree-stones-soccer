@@ -1,0 +1,58 @@
+body { 
+    margin: 0; 
+    background: #111; 
+    display: flex; 
+    flex-direction: column;
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    font-family: sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    color: #ddd;
+}
+
+/* Панель управления */
+#controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 20px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#controls label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #ccc;
+    white-space: nowrap;
+}
+
+#spreadValue {
+    display: inline-block;
+    min-width: 35px;
+    color: #4CAF50;
+    font-weight: bold;
+    font-family: monospace;
+}
+
+#spreadSlider {
+    width: 200px;
+    height: 6px;
+    cursor: pointer;
+    accent-color: #4CAF50;
+}
+
+canvas { 
+    background: #222;
+    border: 12px solid #1a0f07; 
+    border-radius: 4px;
+    box-shadow: 0 20px 45px rgba(0,0,0,0.7);
+    max-width: 100vw;
+    max-height: calc(100vh - 80px);
+    aspect-ratio: 1200 / 800;
+}
