@@ -7,16 +7,82 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Панель управления над игровым полем -->
+    <!-- Панель управления НАД игровым полем -->
     <div id="controls">
-        <label for="spreadSlider">
-            Разброс удара: 
-            <span id="spreadValue">0.35</span>
-        </label>
-        <input type="range" id="spreadSlider" min="0.1" max="0.5" step="0.01" value="0.35">
+        <div class="control-group">
+            <label for="spreadSlider">
+                Разброс удара: 
+                <span id="spreadValue">0.35</span>
+            </label>
+            <input type="range" id="spreadSlider" min="0.1" max="0.5" step="0.01" value="0.35">
+        </div>
+        
+        <div class="control-group">
+            <label for="aiThinkingSlider">
+                Время "раздумий" бота: 
+                <span id="aiThinkingValue">120 кадр. (2.0 сек.)</span>
+            </label>
+            <input type="range" id="aiThinkingSlider" min="0" max="100" step="1" value="50">
+        </div>
+        
+        <div class="control-group checkbox-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="alternateStrikerCheckbox">
+                <span class="checkbox-text">Чередование битков</span>
+            </label>
+        </div>
     </div>
 
     <canvas id="gameCanvas" width="1200" height="800"></canvas>
+
+    <!-- Панель управления ПОД игровым полем (штрафы AI) -->
+    <div id="penaltiesControls">
+        <div class="penalty-group">
+            <label>Штраф за риск: <span id="riskPenaltyValue">4000</span></label>
+            <input type="range" id="riskPenaltySlider" min="0" max="10000" step="100" value="4000">
+        </div>
+        
+        <div class="penalty-group">
+            <label>Штраф за силу: <span id="forcePenaltyValue">300</span></label>
+            <input type="range" id="forcePenaltySlider" min="0" max="1000" step="10" value="300">
+        </div>
+        
+        <div class="penalty-group">
+            <label>Штраф за непроход: <span id="gatesBlockPenaltyValue">10000</span></label>
+            <input type="range" id="gatesBlockPenaltySlider" min="0" max="20000" step="500" value="10000">
+        </div>
+        
+        <div class="penalty-group">
+            <label>Бонус за продвижение: <span id="advancementBonusValue">3000</span></label>
+            <input type="range" id="advancementBonusSlider" min="0" max="10000" step="100" value="3000">
+        </div>
+        
+        <div class="penalty-group">
+            <label>Штраф за откат: <span id="retreatPenaltyValue">0.5</span></label>
+            <input type="range" id="retreatPenaltySlider" min="0" max="5" step="0.1" value="0.5">
+        </div>
+        
+        <div class="penalty-group">
+            <label>Бонус за следующий гол: <span id="nextShotBonusValue">5000</span></label>
+            <input type="range" id="nextShotBonusSlider" min="0" max="15000" step="500" value="5000">
+        </div>
+    </div>
+
+    <script type="module" src="dist/game.js"></script>
+	    <!-- Баннер согласия на cookies -->
+    <div id="cookieBanner" class="cookie-banner hidden">
+        <div class="cookie-content">
+            <p>
+                🍪 Этот сайт использует cookies для сохранения ваших настроек игры.
+                Мы не собираем личные данные и не передаём их третьим лицам.
+            </p>
+            <div class="cookie-buttons">
+                <button id="acceptCookies" class="btn-accept">Принять</button>
+                <button id="declineCookies" class="btn-decline">Отклонить</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="dist/game.js"></script>
 </body>
 </html>

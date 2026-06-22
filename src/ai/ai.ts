@@ -1,0 +1,92 @@
+/**
+ * Основной класс AI
+ */
+
+import { Stone } from "../stone.js";
+import { GameMath } from "../math.js";
+import { MAX_FORCE, GameState, spreadFactor } from "../state.js";
+import { AIMove } from "./types.js";
+import { evaluateGoalShot, findBestTacticalMoves, getEmergencyMove } from "./strategy.js";
+
+/**
+ * Класс AI реализует логику принятия решений ботом.
+ */
+export class AI {
+    /**
+     * Рассчитывает лучший ход для бота.
+     */
+    public static calculateMove(stones: Stone[]): AIMove | null {
+        const available: Stone[] = stones.filter(s => !s.isOut);
+        if (available.length < 3) return null;
+
+        let bestMove: AIMove | null = null;
+        const allConsideredMoves: AIMove[] = [];
+
+        for (const striker of available) {
+            const gates: Stone[] = available.filter(s => s !== striker);
+            if (gates.length !== 2) continue;
+
+            const gateCenter = {
+                x: (gates[0].x + gates[1].x) / 2,
+                y: (gates[0].y + gates[1].y) / 2
+            };
+
+            // 1. Попытка гола
+            const goalShot = evaluateGoalShot(striker, gates);
+            if (goalShot) {
+                allConsideredMoves.push(goalShot);
+                if (!bestMove || goalShot.score > bestMove.score) {
+                    bestMove = goalShot;
+                }
+            }
+
+            // 2. Тактические проходы
+            const tacticalEvaluations = findBestTacticalMoves(striker, gateCenter, gates, available);
+            
+            for (const evl of tacticalEvaluations) {
+                if (!evl.rejected) {
+                    allConsideredMoves.push(evl.move);
+                    if (!bestMove || evl.move.score > bestMove.score) {
+                        bestMove = evl.move;
+                    }
+                } else {
+                    // Логирование отклонённых вариантов
+                    console.debug(`AI: Отклонён вариант (${evl.move.type}): ${evl.rejectReason}`);
+                }
+            }
+        }
+
+        // Аварийный режим
+        if (!bestMove) {
+            console.warn("AI: Нет подходящих ходов. Переход в аварийный режим.");
+            const emergencyMove = getEmergencyMove(available);
+            if (emergencyMove) {
+                allConsideredMoves.push(emergencyMove);
+                bestMove = emergencyMove;
+            }
+        }
+
+        GameState.aiConsideredMoves = allConsideredMoves;
+        return bestMove;
+    }
+
+    /**
+     * Применяет рассчитанный ход.
+     */
+    public static executeMove(move: AIMove): void {
+        const s: Stone = move.stone;
+
+        s.startX = s.x;
+        s.startY = s.y;
+
+        const dx: number = move.targetX - s.x;
+        const dy: number = move.targetY - s.y;
+        const angle: number = Math.atan2(dy, dx);
+
+        const spread: number = (move.force / MAX_FORCE) ** 2 * spreadFactor;
+        const finalAngle: number = GameMath.randomGaussian(angle, spread);
+
+        s.vx = Math.cos(finalAngle) * move.force;
+        s.vy = Math.sin(finalAngle) * move.force;
+    }
+}

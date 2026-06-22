@@ -1,4 +1,4 @@
-const FRICTION = 0.98;
+import { FRICTION, STOP_THRESHOLD_RATIO } from "./state.js";
 // Загрузка текстуры камня
 const stoneImg = new Image();
 stoneImg.src = 'assets/stone_tex.jpg';
@@ -28,27 +28,25 @@ export class Stone {
             return;
         this.x += this.vx;
         this.y += this.vy;
+        // Используем глобальную константу FRICTION
         this.vx *= FRICTION;
         this.vy *= FRICTION;
-        const stopThreshold = this.radius * 0.05;
+        // Порог остановки: процент от радиуса камня
+        const stopThreshold = this.radius * STOP_THRESHOLD_RATIO;
         if (Math.hypot(this.vx, this.vy) < stopThreshold) {
             this.vx = 0;
             this.vy = 0;
         }
-        // ✅ ИСПРАВЛЕНО: Вылет если более половины камня за краем стола
-        // Левый край
+        // Вылет за стол (более половины камня)
         if (this.x + this.radius < 0) {
             this.isOut = true;
         }
-        // Правый край
         else if (this.x - this.radius > canvasWidth) {
             this.isOut = true;
         }
-        // Верхний край
         else if (this.y + this.radius < 0) {
             this.isOut = true;
         }
-        // Нижний край
         else if (this.y - this.radius > canvasHeight) {
             this.isOut = true;
         }

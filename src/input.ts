@@ -1,9 +1,16 @@
-import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor } from "./state.js";
+import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor, noRepeatStriker } from "./state.js";
 import { GameMath, Point } from "./math.js";
 import { Stone } from "./stone.js";
 
 function getStoneAt(x: number, y: number): Stone | undefined {
-    return stones.find(s => !s.isOut && Math.hypot(s.x - x, s.y - y) < s.radius + 20);
+    const stone = stones.find(s => !s.isOut && Math.hypot(s.x - x, s.y - y) < s.radius + 20);
+    
+    // Проверка правила "не повторять биток"
+    if (stone && noRepeatStriker && GameState.lastUsedStriker === stone) {
+        return undefined;
+    }
+    
+    return stone;
 }
 
 export function getMousePos(e: MouseEvent | TouchEvent): Point {
@@ -32,7 +39,6 @@ export function getMousePos(e: MouseEvent | TouchEvent): Point {
 }
 
 export function startAim(e: MouseEvent | TouchEvent): void {
-    // Блокируем ввод, если ход бота или камни движутся
     if (GameState.currentPlayer === 2) return;
     if (stones.some(s => Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1)) return;
 
@@ -89,10 +95,7 @@ export function endAim(): void {
     let force = Math.hypot(tvx, tvy);
 
     const baseAngle = Math.atan2(tvy, tvx);
-    
-    // === ИСПОЛЬЗУЕМ РЕГУЛИРУЕМЫЙ spreadFactor ВМЕСТО 0.35 ===
-    const currentStdDev = (force / MAX_FORCE) * spreadFactor;
-    
+    const currentStdDev = (force / MAX_FORCE) ** 2 * spreadFactor;
     const finalAngle = GameMath.randomGaussian(baseAngle, currentStdDev);
 
     stone.vx = Math.cos(finalAngle) * force;
