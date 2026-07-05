@@ -1,38 +1,52 @@
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
 body { 
-    margin: 0; 
     background: #111; 
     display: flex; 
     flex-direction: column;
-    justify-content: center; 
-    align-items: center; 
-    min-height: 100vh; 
+    justify-content: space-between;
+    align-items: center;
     font-family: sans-serif;
-    overflow: hidden;
     touch-action: none;
     color: #ddd;
+    
+    height: 100dvh;
+    height: 100vh;
 }
 
-/* ������ ���������� */
+/* Верхняя панель управления */
 #controls {
     display: flex;
-    gap: 30px;
-    padding: 12px 25px;
-    margin-bottom: 10px;
+    gap: 20px;
+    padding: 10px 20px;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+    margin: 10px 10px 5px 10px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 .control-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     align-items: center;
 }
 
 #controls label {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: #ccc;
     white-space: nowrap;
@@ -40,21 +54,21 @@ body {
 
 #spreadValue, #aiThinkingValue {
     display: inline-block;
-    min-width: 120px;
+    min-width: 100px;
     color: #4CAF50;
     font-weight: bold;
     font-family: monospace;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 #spreadSlider, #aiThinkingSlider {
-    width: 200px;
-    height: 6px;
+    width: 150px;
+    height: 5px;
     cursor: pointer;
     accent-color: #4CAF50;
 }
 
-/* ����� ��� �������� */
+/* Чекбокс */
 .checkbox-group {
     justify-content: center;
 }
@@ -62,9 +76,9 @@ body {
 .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     cursor: pointer;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.05);
     transition: background 0.2s;
@@ -76,43 +90,66 @@ body {
 }
 
 .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     cursor: pointer;
     accent-color: #4CAF50;
 }
 
 .checkbox-text {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: #ccc;
     white-space: nowrap;
 }
-/* ������ ������� AI ��� ������� ����� */
+
+/* Контейнер для canvas - занимает всё оставшееся пространство */
+.canvas-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+    width: 100%;
+    padding: 5px 10px;
+}
+
+/* Canvas сохраняет пропорции 1200:800 */
+canvas { 
+    background: #222;
+    border: 8px solid #1a0f07; 
+    border-radius: 4px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+    
+    /* Размеры задаются через JavaScript */
+    display: block;
+}
+
+/* Нижняя панель штрафов */
 #penaltiesControls {
     display: flex;
     flex-wrap: wrap;
-    gap: 20px;
-    padding: 12px 25px;
-    margin-top: 10px;
+    gap: 15px;
+    padding: 10px 20px;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     justify-content: center;
-    max-width: 1200px;
+    flex-shrink: 0;
+    margin: 5px 10px 10px 10px;
 }
 
 .penalty-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     align-items: center;
-    min-width: 150px;
+    min-width: 110px;
 }
 
 .penalty-group label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
     color: #ccc;
     white-space: nowrap;
@@ -120,20 +157,54 @@ body {
 
 .penalty-group span {
     display: inline-block;
-    min-width: 50px;
+    min-width: 40px;
     color: #FF9800;
     font-weight: bold;
     font-family: monospace;
-    font-size: 11px;
+    font-size: 10px;
 }
 
 .penalty-group input[type="range"] {
-    width: 140px;
-    height: 5px;
+    width: 100px;
+    height: 4px;
     cursor: pointer;
     accent-color: #FF9800;
 }
-/* ������ �������� �� cookies */
+
+/* Кнопка полноэкранного режима */
+.fullscreen-btn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    z-index: 9999;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+.fullscreen-btn:hover {
+    background: rgba(76, 175, 80, 0.8);
+    border-color: #4CAF50;
+    transform: scale(1.1);
+}
+
+.fullscreen-btn:active {
+    transform: scale(0.95);
+}
+
+/* Баннер cookies */
 .cookie-banner {
     position: fixed;
     bottom: 0;
@@ -212,10 +283,6 @@ body {
     box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
 }
 
-.btn-accept:active {
-    transform: translateY(0);
-}
-
 .btn-decline {
     background: transparent;
     color: #aaa;
@@ -227,12 +294,54 @@ body {
     color: #fff;
     border-color: #777;
 }
-canvas { 
-    background: #222;
-    border: 12px solid #1a0f07; 
-    border-radius: 4px;
-    box-shadow: 0 20px 45px rgba(0,0,0,0.7);
-    max-width: 100vw;
-    max-height: calc(100vh - 100px);
-    aspect-ratio: 1200 / 800;
+
+/* Адаптивность для маленьких экранов */
+@media screen and (max-width: 768px) {
+    #controls {
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    #spreadSlider, #aiThinkingSlider {
+        width: 120px;
+    }
+    
+    #penaltiesControls {
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    .penalty-group {
+        min-width: 90px;
+    }
+    
+    .penalty-group input[type="range"] {
+        width: 80px;
+    }
+    
+    canvas {
+        border-width: 6px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    #controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    #penaltiesControls {
+        flex-direction: column;
+    }
+    
+    .penalty-group {
+        flex-direction: row;
+        justify-content: space-between;
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .penalty-group label {
+        font-size: 11px;
+    }
 }

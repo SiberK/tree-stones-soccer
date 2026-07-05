@@ -2,11 +2,40 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- iOS Safari: полноэкранный режим -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Футбол в три камня">
+    
+    <!-- Android Chrome: полноэкранный режим -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#111111">
+    
     <title>Футбол в три камня | Three-Stones-Soccer</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Кнопка полноэкранного режима -->
+    <button id="fullscreenBtn" class="fullscreen-btn" title="Полноэкранный режим">
+        ⛶
+    </button>
+
+    <!-- Баннер согласия на cookies -->
+    <div id="cookieBanner" class="cookie-banner hidden">
+        <div class="cookie-content">
+            <p>
+                🍪 Этот сайт использует cookies для сохранения ваших настроек игры.
+                Мы не собираем личные данные и не передаём их третьим лицам.
+            </p>
+            <div class="cookie-buttons">
+                <button id="acceptCookies" class="btn-accept">Принять</button>
+                <button id="declineCookies" class="btn-decline">Отклонить</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Панель управления НАД игровым полем -->
     <div id="controls">
         <div class="control-group">
@@ -33,7 +62,10 @@
         </div>
     </div>
 
-    <canvas id="gameCanvas" width="1200" height="800"></canvas>
+       <!-- Контейнер для canvas (для правильного масштабирования) -->
+    <div class="canvas-container">
+        <canvas id="gameCanvas" width="1200" height="800"></canvas>
+    </div>
 
     <!-- Панель управления ПОД игровым полем (штрафы AI) -->
     <div id="penaltiesControls">
@@ -65,21 +97,6 @@
         <div class="penalty-group">
             <label>Бонус за следующий гол: <span id="nextShotBonusValue">5000</span></label>
             <input type="range" id="nextShotBonusSlider" min="0" max="15000" step="500" value="5000">
-        </div>
-    </div>
-
-    <script type="module" src="dist/game.js"></script>
-	    <!-- Баннер согласия на cookies -->
-    <div id="cookieBanner" class="cookie-banner hidden">
-        <div class="cookie-content">
-            <p>
-                🍪 Этот сайт использует cookies для сохранения ваших настроек игры.
-                Мы не собираем личные данные и не передаём их третьим лицам.
-            </p>
-            <div class="cookie-buttons">
-                <button id="acceptCookies" class="btn-accept">Принять</button>
-                <button id="declineCookies" class="btn-decline">Отклонить</button>
-            </div>
         </div>
     </div>
 
