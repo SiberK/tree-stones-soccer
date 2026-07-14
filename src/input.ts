@@ -1,4 +1,10 @@
-import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor, alternateStriker } from "./state.js";
+/**
+ * src/input.ts
+ * 
+ * Обработка ввода игрока (мышь/тач).
+ */
+
+import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor, alternateStriker, accuracyEnabled } from "./state.js";
 import { GameMath, Point } from "./math.js";
 import { Stone } from "./stone.js";
 import { simulationController } from "./simulation/controller.js";
@@ -14,6 +20,10 @@ function getStoneAt(x: number, y: number): Stone | undefined {
     return stone;
 }
 
+/**
+ * Преобразует экранные координаты мыши в логические координаты canvas.
+ * Учитывает CSS-масштабирование через object-fit: contain.
+ */
 export function getMousePos(e: MouseEvent | TouchEvent): Point {
     const rect = canvas.getBoundingClientRect();
     let cx = 0, cy = 0;
@@ -33,16 +43,22 @@ export function getMousePos(e: MouseEvent | TouchEvent): Point {
         cy = me.clientY;
     }
     
+    // Пересчёт с учётом CSS-масштабирования
+    // getBoundingClientRect() возвращает реальные экранные размеры canvas
+    // canvas.width/height — логические размеры
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
     return {
-        x: (cx - rect.left) * (canvas.width / rect.width),
-        y: (cy - rect.top) * (canvas.height / rect.height)
+        x: (cx - rect.left) * scaleX,
+        y: (cy - rect.top) * scaleY
     };
 }
 
 export function startAim(e: MouseEvent | TouchEvent): void {
     if (GameState.currentPlayer === 2) return;
     if (stones.some(s => Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1)) return;
-    if (simulationController.isSimulating()) return; // Блокируем ввод во время симуляции
+    if (simulationController.isSimulating()) return;
 
     const pos = getMousePos(e);
     GameState.selectedStone = getStoneAt(pos.x, pos.y) || null;
@@ -97,8 +113,11 @@ export function endAim(): void {
     let force = Math.hypot(tvx, tvy);
 
     const baseAngle = Math.atan2(tvy, tvx);
-    const currentStdDev = (force / MAX_FORCE) ** 2 * spreadFactor;
-    const finalAngle = GameMath.randomGaussian(baseAngle, currentStdDev);
+    
+    // Разброс (только если включена точность)
+    const spreadValue = accuracyEnabled ? spreadFactor : 0;
+    const spread = (force / MAX_FORCE) ** 2 * spreadValue;
+    const finalAngle = GameMath.randomGaussian(baseAngle, spread);
 
     // Запускаем симуляцию для игрока
     const stoneIndex = stones.indexOf(stone);

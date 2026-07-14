@@ -1,11 +1,12 @@
 /**
  * src/game.ts
+ * 
+ * Главный модуль игры.
  */
 
 import { 
-    GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, canvas, spawnAtGates, 
-    initSpreadSlider, initAIThinkingSlider, initAlternateStrikerCheckbox, 
-    initAIPenaltiesSliders, loadSettingsFromCookie, checkCookieConsent, initCookieBanner,
+    GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, LOGICAL_WIDTH, LOGICAL_HEIGHT, canvas, spawnAtGates, 
+    initSettingsPanel, loadSettingsFromCookie, checkCookieConsent, initCookieBanner,
     aiThinkingTime, cookiesAccepted
 } from "./state.js";
 import { AI } from "./ai/index.js";
@@ -39,12 +40,11 @@ function handleOccurredEvents(events: EventOccurrence[]): void {
         switch (event.eventType) {
             case 'COLLISION': {
                 const data = event.data as any;
-                // Вспышка в точке столкновения
                 addVisualEffect({
                     type: 'FLASH',
                     x: data.collisionPoint.x,
                     y: data.collisionPoint.y,
-                    duration: 15, // кадров
+                    duration: 15,
                     color: 'rgba(255, 255, 200, 0.8)',
                     radius: 40
                 });
@@ -54,7 +54,6 @@ function handleOccurredEvents(events: EventOccurrence[]): void {
             
             case 'CLEAN_PASS': {
                 const data = event.data as any;
-                // Подсветка точки прохода
                 addVisualEffect({
                     type: 'FLASH',
                     x: data.gateIntersection.x,
@@ -69,10 +68,9 @@ function handleOccurredEvents(events: EventOccurrence[]): void {
             
             case 'GOAL': {
                 const data = event.data as any;
-                const goalX = data.goalSide === 'left' ? GOAL_WIDTH : canvas.width - GOAL_WIDTH;
+                const goalX = data.goalSide === 'left' ? GOAL_WIDTH : LOGICAL_WIDTH - GOAL_WIDTH;
                 const goalY = GOAL_Y + GOAL_HEIGHT / 2;
                 
-                // Большой эффект гола
                 addVisualEffect({
                     type: 'FLASH',
                     x: goalX,
@@ -88,7 +86,6 @@ function handleOccurredEvents(events: EventOccurrence[]): void {
             case 'OUT': {
                 const data = event.data as any;
                 const stone = stones[data.stoneIndex];
-                // Эффект вылета
                 addVisualEffect({
                     type: 'FLASH',
                     x: stone.x,
@@ -104,60 +101,27 @@ function handleOccurredEvents(events: EventOccurrence[]): void {
     }
 }
 
-/**
- * Проверяет, нужно ли перерисовывать кадр.
- */
 function checkIfNeedsRedraw(): boolean {
-    // Если идёт симуляция - всегда рисуем
-    if (simulationController.isSimulating()) {
-        return true;
-    }
+    if (simulationController.isSimulating()) return true;
+    if (stones.some(s => !s.isOut && (Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1))) return true;
+    if (GameState.isAiming) return true;
+    if (GameState.currentPlayer === 2 && GameState.aiSelectedStone) return true;
+    if (GameState.resultTimer > 0) return true;
+    if (GameState.aiConsideredMoves.length > 0) return true;
     
-    // Если есть движение камней - рисуем
-    const hasMovement = stones.some(s => !s.isOut && (Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1));
-    if (hasMovement) {
-        return true;
-    }
-    
-    // Если игрок целится - рисуем
-    if (GameState.isAiming) {
-        return true;
-    }
-    
-    // Если бот "думает" - рисуем
-    if (GameState.currentPlayer === 2 && GameState.aiSelectedStone) {
-        return true;
-    }
-    
-    // Если есть таймер результата - рисуем
-    if (GameState.resultTimer > 0) {
-        return true;
-    }
-    
-    // Если есть визуализация AI - рисуем
-    if (GameState.aiConsideredMoves.length > 0) {
-        return true;
-    }
-    
-    // Если изменился счёт - рисуем
     if (GameState.scoreLeft !== lastScoreLeft || GameState.scoreRight !== lastScoreRight) {
         lastScoreLeft = GameState.scoreLeft;
         lastScoreRight = GameState.scoreRight;
         return true;
     }
     
-    // Если изменился текущий игрок - рисуем
     if (GameState.currentPlayer !== lastPlayer) {
         lastPlayer = GameState.currentPlayer;
         return true;
     }
     
-    // Если есть текст результата - рисуем
-    if (GameState.turnResultText !== "") {
-        return true;
-    }
+    if (GameState.turnResultText !== "") return true;
     
-    // Ничего не меняется - не рисуем
     return false;
 }
 
@@ -269,8 +233,6 @@ function gameLoop(currentTime: number = 0): void {
         lastPlayer = GameState.currentPlayer;
     }
     
-    // УБРАНО: console.log('[Redraw]...')
-    
     if (GameState.resultTimer > 0) {
         GameState.resultTimer--;
         needsRedraw = true;
@@ -311,7 +273,6 @@ function gameLoop(currentTime: number = 0): void {
         render();
     }
 }
-    
 
 // Инициализация ввода
 canvas.addEventListener('mousedown', (e: MouseEvent) => {
@@ -351,10 +312,8 @@ if (cookiesAccepted) {
     loadSettingsFromCookie();
 }
 
-initSpreadSlider();
-initAIThinkingSlider();
-initAlternateStrikerCheckbox();
-initAIPenaltiesSliders();
+// Инициализация элементов управления
+initSettingsPanel();
 initFullscreenButton();
 
 spawnAtGates(1);

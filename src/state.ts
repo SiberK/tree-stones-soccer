@@ -1,531 +1,462 @@
+/**
+ * src/state.ts
+ * 
+ * Глобальное состояние игры и константы.
+ */
+
 import { Stone } from "./stone.js";
-import { Point } from "./math.js";
 
+// ============================================================
+// ЛОГИЧЕСКИЕ РАЗМЕРЫ ПОЛЯ (для физики)
+// ============================================================
+
+/**
+ * Логическая ширина поля (в игровых единицах)
+ */
+export const LOGICAL_WIDTH = 1200;
+
+/**
+ * Логическая высота поля (в игровых единицах)
+ */
+export const LOGICAL_HEIGHT = 800;
+
+/**
+ * Canvas и контекст
+ */
 export const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-export const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-/**
- * Опциональное правило: "Чередование битков".
- * В рамках серии ударов (пока ход сохраняется благодаря чистому проходу)
- * нельзя бить одним и тем же камнем дважды подряд.
- * При переходе хода к сопернику ограничение сбрасывается.
- */
-export let alternateStriker: boolean = false;
+export const ctx = canvas.getContext('2d')!;
+
+// Устанавливаем фиксированный размер canvas = логический размер
+canvas.width = LOGICAL_WIDTH;
+canvas.height = LOGICAL_HEIGHT;
 
 // ============================================================
-// ФИЗИЧЕСКИЕ КОНСТАНТЫ (едины для всей игры и AI)
+// КОНСТАНТЫ ПОЛЯ (в логических координатах)
 // ============================================================
 
-/** Множитель силы удара от длины вектора натяжения мыши */
-export const FORCE_FACTOR: number = 0.12;
-
-/** Максимальная сила удара (пиковая скорость камня после удара) */
-export const MAX_FORCE: number = 18;
-
-/** 
- * Коэффициент трения о поверхность стола.
- * Применяется каждый кадр: скорость умножается на это значение.
- */
-export const FRICTION: number = 0.98;
-
-/** 
- * Порог остановки камня (доля от радиуса).
- * Если скорость камня ниже этого значения, он считается остановившимся.
- */
-export const STOP_THRESHOLD_RATIO: number = 0.05;
-
-/** Коэффициент упругости при столкновении камней */
-export const BOUNCE_COEFFICIENT: number = 0.7;
-
-// ============================================================
-// КОНСТАНТЫ ИГРОВОГО ПОЛЯ
-// ============================================================
-
-/** Верхняя координата ворот по оси Y */
-export const GOAL_Y: number = 280;
-
-/** Высота ворот */
-export const GOAL_HEIGHT: number = 240;
-
-/** Ширина створа ворот */
-export const GOAL_WIDTH: number = 30;
-
-/** Радиус камня (в пикселях) */
-export const STONE_RADIUS: number = 28;
-
-// ============================================================
-// НАСТРОЙКИ ИГРОКА (регулируются слайдерами)
-// ============================================================
-
-/** 
- * Стандартное отклонение Гауссова разброса удара.
- * Регулируется слайдером "Разброс удара" (0.1..0.5).
- */
-export let spreadFactor: number = 0.35;
+export const GOAL_Y = 150;
+export const GOAL_HEIGHT = 200;
+export const GOAL_WIDTH = 40;
 
 /**
- * Время визуализации "мыслей" бота перед ударом (в кадрах).
- * Регулируется логарифмическим слайдером (1..600).
+ * Радиус камня
  */
-export let aiThinkingTime: number = 120;
+export const STONE_RADIUS = 28;
+
+// ============================================================
+// НАСТРАИВАЕМЫЕ ПАРАМЕТРЫ
+// ============================================================
 
 /**
- * Опциональное правило: нельзя одним камнем ходить два раза подряд.
- * Управляется чекбоксом в интерфейсе.
+ * Максимальная сила удара
  */
-export let noRepeatStriker: boolean = false;
+export let MAX_FORCE = 18;
 
 /**
- * Инициализирует слайдер разброса удара.
+ * Коэффициент трения (0.90 - сильное трение, 0.99 - слабое трение)
  */
-export function initSpreadSlider(): void {
-    const slider = document.getElementById('spreadSlider') as HTMLInputElement;
-    const valueDisplay = document.getElementById('spreadValue') as HTMLSpanElement;
+export let FRICTION = 0.98;
 
-    if (!slider || !valueDisplay) {
-        console.warn('Слайдер разброса не найден в DOM.');
-        return;
-    }
+/**
+ * Включена ли точность удара (разброс)
+ */
+export let accuracyEnabled = true;
 
-    // ВАЖНО: устанавливаем значение из переменной (которая могла быть загружена из cookie)
-    slider.value = spreadFactor.toString();
-    valueDisplay.textContent = spreadFactor.toFixed(2);
+/**
+ * Коэффициент разброса (случайное отклонение угла)
+ */
+export let spreadFactor = 0.1;
 
-    slider.addEventListener('input', () => {
-        spreadFactor = parseFloat(slider.value);
-        valueDisplay.textContent = spreadFactor.toFixed(2);
-        saveSettingsToCookie(); // Сохраняем
-    });
+/**
+ * Время "раздумья" AI в кадрах
+ */
+export let aiThinkingTime = 60;
+
+/**
+ * Включено ли чередование битков
+ */
+export let alternateStriker = false;
+
+/**
+ * Множитель силы удара
+ */
+export const FORCE_FACTOR = 0.04;
+
+/**
+ * Порог остановки (доля радиуса)
+ */
+export const STOP_THRESHOLD_RATIO = 0.02;
+
+// ============================================================
+// ПАРАМЕТРЫ ОЦЕНКИ AI
+// ============================================================
+
+/**
+ * Бонус за продвижение к воротам
+ */
+export let advancementBonusFactor = 3000;
+
+/**
+ * Штраф за отступление от ворот
+ */
+export let retreatPenaltyFactor = 0.5;
+
+/**
+ * Штраф за отсутствие валидных проходов
+ */
+export let noValidPassesPenalty = 5000;
+
+/**
+ * Бонус за острый угол треугольника (хорошая позиция для гола)
+ */
+export let triangleAcuteBonus = 2000;
+
+/**
+ * Штраф за тупой угол треугольника (плохая позиция)
+ */
+export let triangleObtusePenalty = 1000;
+
+/**
+ * Бонус за возможность следующего удара на гол
+ */
+export let nextShotBonus = 5000;
+
+/**
+ * Бонус за тактическую позицию для следующего хода
+ */
+export let nextTacticalBonus = 2000;
+
+// ============================================================
+// ФУНКЦИИ ДЛЯ ИЗМЕНЕНИЯ НАСТРОЕК
+// ============================================================
+
+/**
+ * Устанавливает максимальную силу удара
+ */
+export function setMaxForce(value: number): void {
+    MAX_FORCE = value;
+    updateMaxDistance();
 }
 
 /**
- * Инициализирует логарифмический слайдер времени "раздумий" бота.
+ * Устанавливает коэффициент трения
  */
-export function initAIThinkingSlider(): void {
-    const slider = document.getElementById('aiThinkingSlider') as HTMLInputElement;
-    const valueDisplay = document.getElementById('aiThinkingValue') as HTMLSpanElement;
-
-    if (!slider || !valueDisplay) {
-        console.warn('Слайдер времени ИИ не найден в DOM.');
-        return;
-    }
-
-    const logMax = Math.log10(600);
-    
-    const updateValue = () => {
-        const sliderVal = parseFloat(slider.value);
-        aiThinkingTime = Math.round(Math.pow(10, (sliderVal / 100) * logMax));
-        valueDisplay.textContent = `${aiThinkingTime} кадр. (${(aiThinkingTime / 60).toFixed(1)} сек.)`;
-    };
-
-    // Устанавливаем начальное значение из переменной
-    const initialSliderVal = (Math.log10(aiThinkingTime) / logMax) * 100;
-    slider.value = initialSliderVal.toString();
-    updateValue();
-
-    slider.addEventListener('input', () => {
-        updateValue();
-        saveSettingsToCookie(); // Сохраняем
-    });
+export function setFriction(value: number): void {
+    FRICTION = value;
+    updateMaxDistance();
 }
 
 /**
- * Инициализирует чекбокс правила "не повторять биток".
+ * Устанавливает включение точности удара
  */
-export function initNoRepeatCheckbox(): void {
-    const checkbox = document.getElementById('noRepeatCheckbox') as HTMLInputElement;
-    if (!checkbox) {
-        console.warn('Чекбокс правила не найден в DOM.');
-        return;
-    }
+export function setAccuracyEnabled(value: boolean): void {
+    accuracyEnabled = value;
+}
 
-    checkbox.checked = noRepeatStriker;
-    checkbox.addEventListener('change', () => {
-        noRepeatStriker = checkbox.checked;
-        if (!noRepeatStriker) {
-            GameState.lastUsedStriker = null;
-        }
-    });
+/**
+ * Вычисляет максимальное расстояние движения камня
+ * Формула: distance = force / K, где K = -ln(friction)
+ */
+export function calculateMaxDistance(): number {
+    if (FRICTION <= 0 || FRICTION >= 1) return 0;
+    const K = -Math.log(FRICTION);
+    if (K === 0) return 0;
+    return MAX_FORCE / K;
+}
+
+/**
+ * Обновляет отображение максимального расстояния в панели настроек
+ */
+function updateMaxDistance(): void {
+    const maxDistanceValue = document.getElementById('maxDistanceValue');
+    if (maxDistanceValue) {
+        const distance = calculateMaxDistance();
+        maxDistanceValue.textContent = Math.round(distance).toString();
+    }
 }
 
 // ============================================================
-// ИГРОВЫЕ ОБЪЕКТЫ
+// СОСТОЯНИЕ ИГРЫ
 // ============================================================
 
-/** Массив из трех игровых камней */
-export const stones: Stone[] = [
-    new Stone(0, 0, STONE_RADIUS, '#999999'),
-    new Stone(0, 0, STONE_RADIUS, '#bbbbbb'),
-    new Stone(0, 0, STONE_RADIUS, '#777777')
-];
+export interface GameStateType {
+    currentPlayer: number;
+    isAiming: boolean;
+    selectedStone: Stone | null;
+    mouseX: number;
+    mouseY: number;
+    scoreLeft: number;
+    scoreRight: number;
+    hasPassedThrough: boolean;
+    hitObstacle: boolean;
+    isGoalScored: boolean;
+    turnResultText: string;
+    resultTimer: number;
+    lastStruckStone: Stone | null;
+    lastUsedStriker: Stone | null;
+    aiThinkingTimer: number;
+    aiSelectedStone: Stone | null;
+    aiAimTarget: { x: number; y: number } | null;
+    aiConsideredMoves: any[];
+}
 
-/**
- * Глобальное состояние игры.
- */
-export const GameState = {
-    /** Камень, который сейчас тянет игрок (рогатка) */
-    selectedStone: null as Stone | null,
-    /** Флаг: находится ли игрок в режиме прицеливания */
-    isAiming: false,
-    /** Текущая позиция мыши по X */
-    mouseX: 0,
-    /** Текущая позиция мыши по Y */
-    mouseY: 0,
-    
-    /** Камень, который был ударен последним (активный камень) */
-    lastStruckStone: null as Stone | null,
-    /** Флаг: совершил ли активный камень "чистый проход" */
-    hasPassedThrough: false,
-    /** Флаг: задел ли активный камень другой камень (фол) */
-    hitObstacle: false,
-    
-    /** Текст сообщения о результате хода */
-    turnResultText: "",
-    /** Таймер паузы после завершения хода (в кадрах) */
-    resultTimer: 0,
-    
-    /** Счет игрока */
-    scoreLeft: 0,
-    /** Счет бота */
-    scoreRight: 0,
-    /** Флаг: был ли зафиксирован гол */
-    isGoalScored: false,
-    
-    /** Чей сейчас ход: 1 - Игрок, 2 - Бот */
+export const GameState: GameStateType = {
     currentPlayer: 1,
-    
-    /** Камень, которым был сделан последний ход (для правила "не повторять биток") */
-    lastUsedStriker: null as Stone | null,
-    
-    // === СОСТОЯНИЕ ИИ ===
+    isAiming: false,
+    selectedStone: null,
+    mouseX: 0,
+    mouseY: 0,
+    scoreLeft: 0,
+    scoreRight: 0,
+    hasPassedThrough: false,
+    hitObstacle: false,
+    isGoalScored: false,
+    turnResultText: "",
+    resultTimer: 0,
+    lastStruckStone: null,
+    lastUsedStriker: null,
     aiThinkingTimer: 0,
-    aiAimTarget: null as Point | null,
-    aiSelectedStone: null as Stone | null,
-    aiConsideredMoves: [] as any[],
+    aiSelectedStone: null,
+    aiAimTarget: null,
+    aiConsideredMoves: []
 };
 
-/** Звуковой эффект удара камней */
-export const hitSound = new Audio('assets/hit.mp3');
-hitSound.addEventListener('error', () => {});
-// ============================================================
-// ШТРАФЫ И БОНУСЫ AI (регулируются слайдерами для отладки)
-// ============================================================
+export const stones: Stone[] = [];
 
-/**
- * Штраф за риск фола при ударе.
- * Формула: risk² * riskPenaltyFactor
- * Чем больше значение, тем осторожнее бот избегает рискованных ударов.
- * По умолчанию: 4000
- */
-export let riskPenaltyFactor: number = 4000;
-
-/**
- * Штраф за избыточную силу удара.
- * Формула: (force/MAX_FORCE)² * forcePenaltyFactor
- * Чем больше значение, тем сильнее бот предпочитает слабые точные удары.
- * По умолчанию: 300
- */
-export let forcePenaltyFactor: number = 300;
-
-/**
- * Штраф за удар, траектория которого не проходит через ворота между камнями.
- * Огромный штраф, практически запрещающий такие удары.
- * По умолчанию: 10000
- */
-export let gatesBlockPenalty: number = 10000;
-
-/**
- * Штраф за удар, который не достигает линии ворот (слишком слабый).
- * Чуть меньше, чем gatesBlockPenalty, но всё равно огромный.
- * По умолчанию: 8000
- */
-export let gatesReachPenalty: number = 8000;
-
-/**
- * Бонус за продвижение камня к воротам соперника.
- * Формула: normalizedProgress² * advancementBonusFactor
- * Чем больше значение, тем агрессивнее бот продвигается вперёд.
- * По умолчанию: 3000
- */
-export let advancementBonusFactor: number = 3000;
-
-/**
- * Штраф за откат камня назад (дальше от ворот соперника).
- * Формула: backwardMovement² * retreatPenaltyFactor
- * Чем больше значение, тем сильнее бот избегает отступлений.
- * По умолчанию: 0.5
- */
-export let retreatPenaltyFactor: number = 0.5;
-
-/**
- * Штраф за отсутствие валидных проходов из будущей позиции.
- * Если из позиции нет ни одного прохода через ворота — этот штраф.
- * По умолчанию: 3000
- */
-export let noValidPassesPenalty: number = 3000;
-
-/**
- * Бонус за остроугольный треугольник с длинными сторонами.
- * Поощряет создание выгодной геометрии для следующих ударов.
- * По умолчанию: 1500
- */
-export let triangleAcuteBonus: number = 1500;
-
-/**
- * Штраф за тупоугольный треугольник.
- * По умолчанию: 2000
- */
-export let triangleObtusePenalty: number = 2000;
-
-/**
- * Бонус за возможность забить гол следующим ударом.
- * Формула: nextShotBonus * (1 - risk)
- * По умолчанию: 5000
- */
-export let nextShotBonus: number = 5000;
-
-/**
- * Бонус за возможность тактического прохода следующим ударом.
- * По умолчанию: 2000
- */
-export let nextTacticalBonus: number = 2000;
-
-/**
- * Инициализирует слайдеры штрафов AI.
- */
-export function initAIPenaltiesSliders(): void {
-    const sliders = [
-        { id: 'riskPenaltySlider', variable: () => riskPenaltyFactor, setter: (v: number) => riskPenaltyFactor = v, display: 'riskPenaltyValue' },
-        { id: 'forcePenaltySlider', variable: () => forcePenaltyFactor, setter: (v: number) => forcePenaltyFactor = v, display: 'forcePenaltyValue' },
-        { id: 'gatesBlockPenaltySlider', variable: () => gatesBlockPenalty, setter: (v: number) => gatesBlockPenalty = v, display: 'gatesBlockPenaltyValue' },
-        { id: 'advancementBonusSlider', variable: () => advancementBonusFactor, setter: (v: number) => advancementBonusFactor = v, display: 'advancementBonusValue' },
-        { id: 'retreatPenaltySlider', variable: () => retreatPenaltyFactor, setter: (v: number) => retreatPenaltyFactor = v, display: 'retreatPenaltyValue' },
-        { id: 'nextShotBonusSlider', variable: () => nextShotBonus, setter: (v: number) => nextShotBonus = v, display: 'nextShotBonusValue' },
-    ];
-
-    for (const config of sliders) {
-        const slider = document.getElementById(config.id) as HTMLInputElement;
-        const display = document.getElementById(config.display) as HTMLSpanElement;
-        
-        if (!slider || !display) continue;
-
-        // Устанавливаем значение из переменной
-        slider.value = config.variable().toString();
-        display.textContent = config.variable().toFixed(0);
-
-        slider.addEventListener('input', () => {
-            const value = parseFloat(slider.value);
-            config.setter(value);
-            display.textContent = value.toFixed(0);
-            saveSettingsToCookie(); // Сохраняем
-        });
-    }
-}
-// ============================================================
-// СОХРАНЕНИЕ НАСТРОЕК В COOKIES
-// ============================================================
-
-/**
- * Имя cookie для хранения настроек игры
- */
-const SETTINGS_COOKIE_NAME = 'threeStonesSettings';
-
-/**
- * Срок хранения cookie (1 год в секундах)
- */
-const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
-
-/**
- * Сохраняет все настраиваемые параметры в cookie.
- * Вызывается при каждом изменении слайдера или чекбокса.
- * 
- * ВАЖНО: Проверяет согласие пользователя перед сохранением.
- */
-export function saveSettingsToCookie(): void {
-    if (!cookiesAccepted) {
-        // Если пользователь не дал согласия — не сохраняем
-        return;
-    }
-
-    const settings = {
-        spreadFactor,
-        aiThinkingTime,
-        alternateStriker,
-        riskPenaltyFactor,
-        forcePenaltyFactor,
-        gatesBlockPenalty,
-        advancementBonusFactor,
-        retreatPenaltyFactor,
-        nextShotBonus,
-    };
-
-    const json = JSON.stringify(settings);
-    const encoded = encodeURIComponent(json);
-    document.cookie = `${SETTINGS_COOKIE_NAME}=${encoded}; max-age=${COOKIE_MAX_AGE}; path=/; SameSite=Lax`;
-}
-
-/**
- * Загружает настройки из cookie и применяет их к переменным.
- * Вызывается один раз при старте игры, ДО инициализации слайдеров.
- * 
- * @returns true, если настройки были успешно загружены
- */
-export function loadSettingsFromCookie(): boolean {
-    const cookies = document.cookie.split(';');
-    
-    for (const cookie of cookies) {
-        const [name, value] = cookie.trim().split('=');
-        if (name === SETTINGS_COOKIE_NAME) {
-            try {
-                const json = decodeURIComponent(value);
-                const settings = JSON.parse(json);
-                
-                // Применяем загруженные значения
-                if (typeof settings.spreadFactor === 'number') spreadFactor = settings.spreadFactor;
-                if (typeof settings.aiThinkingTime === 'number') aiThinkingTime = settings.aiThinkingTime;
-                if (typeof settings.alternateStriker === 'boolean') alternateStriker = settings.alternateStriker;
-                if (typeof settings.riskPenaltyFactor === 'number') riskPenaltyFactor = settings.riskPenaltyFactor;
-                if (typeof settings.forcePenaltyFactor === 'number') forcePenaltyFactor = settings.forcePenaltyFactor;
-                if (typeof settings.gatesBlockPenalty === 'number') gatesBlockPenalty = settings.gatesBlockPenalty;
-                if (typeof settings.advancementBonusFactor === 'number') advancementBonusFactor = settings.advancementBonusFactor;
-                if (typeof settings.retreatPenaltyFactor === 'number') retreatPenaltyFactor = settings.retreatPenaltyFactor;
-                if (typeof settings.nextShotBonus === 'number') nextShotBonus = settings.nextShotBonus;
-                
-                console.log('Настройки загружены из cookie:', settings);
-                return true;
-            } catch (e) {
-                console.warn('Ошибка загрузки настроек из cookie:', e);
-                return false;
-            }
-        }
-    }
-    
-    return false;
-}
 // ============================================================
 // СОГЛАСИЕ НА COOKIES
 // ============================================================
 
-/**
- * Флаг: дал ли пользователь согласие на использование cookies
- */
-export let cookiesAccepted: boolean = false;
+export let cookiesAccepted = false;
 
-/**
- * Проверяет, дал ли пользователь согласие на cookies.
- * Показывает баннер ТОЛЬКО если согласие ещё не получено.
- */
 export function checkCookieConsent(): void {
     const consent = localStorage.getItem('cookieConsent');
-    
     if (consent === 'accepted') {
         cookiesAccepted = true;
-        console.log('✓ Согласие на cookies получено ранее');
-        // Баннер остаётся скрытым (класс hidden уже есть)
-    } else if (consent === 'declined') {
-        cookiesAccepted = false;
-        console.log('✗ Пользователь отказался от cookies');
-        // Баннер остаётся скрытым
-    } else {
-        // Согласие ещё не получено — ПОКАЗЫВАЕМ баннер
-        console.log('? Требуется согласие на cookies — показываем баннер');
-        showCookieBanner();
     }
 }
 
-/**
- * Показывает баннер согласия на cookies
- */
-function showCookieBanner(): void {
-    const banner = document.getElementById('cookieBanner');
-    if (banner) {
-        banner.classList.remove('hidden');
-    }
-}
-
-/**
- * Скрывает баннер согласия на cookies
- */
-function hideCookieBanner(): void {
-    const banner = document.getElementById('cookieBanner');
-    if (banner) {
-        banner.classList.add('hidden');
-    }
-}
-
-/**
- * Инициализирует обработчики кнопок баннера.
- * При нажатии кнопок баннер скрывается и выбор сохраняется.
- */
 export function initCookieBanner(): void {
-    const acceptBtn = document.getElementById('acceptCookies');
-    const declineBtn = document.getElementById('declineCookies');
+    if (cookiesAccepted) return;
     
-    if (acceptBtn) {
-        acceptBtn.addEventListener('click', () => {
-            cookiesAccepted = true;
-            localStorage.setItem('cookieConsent', 'accepted');
-            hideCookieBanner(); // Скрываем баннер
-            saveSettingsToCookie(); // Сохраняем текущие настройки
-            console.log('✓ Пользователь принял cookies');
+    const banner = document.createElement('div');
+    banner.innerHTML = `
+        <p>Этот сайт использует cookies для сохранения настроек.</p>
+        <button id="acceptCookies">Принять</button>
+        <button id="declineCookies">Отклонить</button>
+    `;
+    banner.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        z-index: 1000;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    `;
+    document.body.appendChild(banner);
+    
+    document.getElementById('acceptCookies')!.addEventListener('click', () => {
+        localStorage.setItem('cookieConsent', 'accepted');
+        cookiesAccepted = true;
+        banner.remove();
+    });
+    
+    document.getElementById('declineCookies')!.addEventListener('click', () => {
+        banner.remove();
+    });
+}
+
+// ============================================================
+// СОХРАНЕНИЕ/ЗАГРУЗКА НАСТРОЕК
+// ============================================================
+
+export function saveSettingsToCookie(): void {
+    if (!cookiesAccepted) return;
+    
+    const settings = {
+        maxForce: MAX_FORCE,
+        friction: FRICTION,
+        accuracyEnabled,
+        spreadFactor,
+        aiThinkingTime,
+        alternateStriker
+    };
+    
+    localStorage.setItem('gameSettings', JSON.stringify(settings));
+}
+
+export function loadSettingsFromCookie(): void {
+    if (!cookiesAccepted) return;
+    
+    const saved = localStorage.getItem('gameSettings');
+    if (!saved) return;
+    
+    try {
+        const settings = JSON.parse(saved);
+        
+        if (settings.maxForce !== undefined) setMaxForce(settings.maxForce);
+        if (settings.friction !== undefined) setFriction(settings.friction);
+        if (settings.accuracyEnabled !== undefined) setAccuracyEnabled(settings.accuracyEnabled);
+        if (settings.spreadFactor !== undefined) spreadFactor = settings.spreadFactor;
+        if (settings.aiThinkingTime !== undefined) aiThinkingTime = settings.aiThinkingTime;
+        if (settings.alternateStriker !== undefined) alternateStriker = settings.alternateStriker;
+    } catch (e) {
+        console.error('Ошибка загрузки настроек:', e);
+    }
+}
+
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ КАМНЕЙ
+// ============================================================
+
+export function spawnAtGates(player: number): void {
+    stones.length = 0;
+    
+    const centerX = LOGICAL_WIDTH / 2;
+    const centerY = LOGICAL_HEIGHT/ 2;
+    
+    // Битки
+    const strikerColor = player === 1 ? 'red' : 'blue';
+    const strikerX = player === 1 ? centerX - 200 : centerX + 200;
+    
+    stones.push(new Stone(strikerX, centerY - 50, STONE_RADIUS, strikerColor));
+    stones.push(new Stone(strikerX, centerY + 50, STONE_RADIUS, strikerColor));
+    
+    // Ворота (камни противника)
+    const gateColor = player === 1 ? 'blue' : 'red';
+    const gateX = player === 1 ? centerX + 100 : centerX - 100;
+    
+    stones.push(new Stone(gateX, centerY, STONE_RADIUS, gateColor));
+}
+
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ ПАНЕЛИ НАСТРОЕК
+// ============================================================
+
+/**
+ * Инициализирует панель настроек
+ */
+export function initSettingsPanel(): void {
+    const settingsBtn = document.getElementById('settingsBtn');
+    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+    const settingsPanel = document.getElementById('settingsPanel');
+    
+    if (!settingsBtn || !closeSettingsBtn || !settingsPanel) return;
+    
+    // Открытие/закрытие панели
+    settingsBtn.addEventListener('click', () => {
+        settingsPanel.classList.toggle('hidden');
+    });
+    
+    closeSettingsBtn.addEventListener('click', () => {
+        settingsPanel.classList.add('hidden');
+    });
+    
+    // Максимальная сила
+    const maxForceSlider = document.getElementById('maxForceSlider') as HTMLInputElement;
+    const maxForceValue = document.getElementById('maxForceValue');
+    
+    if (maxForceSlider && maxForceValue) {
+        maxForceSlider.value = MAX_FORCE.toString();
+        maxForceValue.textContent = MAX_FORCE.toString();
+        
+        maxForceSlider.addEventListener('input', () => {
+            const value = parseFloat(maxForceSlider.value);
+            setMaxForce(value);
+            maxForceValue.textContent = value.toString();
+            saveSettingsToCookie();
         });
     }
     
-    if (declineBtn) {
-        declineBtn.addEventListener('click', () => {
-            cookiesAccepted = false;
-            localStorage.setItem('cookieConsent', 'declined');
-            hideCookieBanner(); // Скрываем баннер
-            // Удаляем cookies, если они были
-            document.cookie = 'threeStonesSettings=; max-age=0; path=/';
-            console.log('✗ Пользователь отказался от cookies');
+    // Трение
+    const frictionSlider = document.getElementById('frictionSlider') as HTMLInputElement;
+    const frictionValue = document.getElementById('frictionValue');
+    
+    if (frictionSlider && frictionValue) {
+        frictionSlider.value = FRICTION.toString();
+        frictionValue.textContent = FRICTION.toFixed(2);
+        
+        frictionSlider.addEventListener('input', () => {
+            const value = parseFloat(frictionSlider.value);
+            setFriction(value);
+            frictionValue.textContent = value.toFixed(2);
+            saveSettingsToCookie();
         });
     }
+    
+    // Точность
+    const accuracyToggle = document.getElementById('accuracyToggle') as HTMLInputElement;
+    
+    if (accuracyToggle) {
+        accuracyToggle.checked = accuracyEnabled;
+        
+        accuracyToggle.addEventListener('change', () => {
+            setAccuracyEnabled(accuracyToggle.checked);
+            saveSettingsToCookie();
+        });
+    }
+    
+    // Разброс
+    const spreadSlider = document.getElementById('spreadSlider') as HTMLInputElement;
+    const spreadValue = document.getElementById('spreadValue');
+    
+    if (spreadSlider && spreadValue) {
+        spreadSlider.value = spreadFactor.toString();
+        spreadValue.textContent = spreadFactor.toFixed(2);
+        
+        spreadSlider.addEventListener('input', () => {
+            const value = parseFloat(spreadSlider.value);
+            spreadFactor = value;
+            spreadValue.textContent = value.toFixed(2);
+            saveSettingsToCookie();
+        });
+    }
+    
+    // Время мысли AI
+    const aiThinkingSlider = document.getElementById('aiThinkingSlider') as HTMLInputElement;
+    const aiThinkingValue = document.getElementById('aiThinkingValue');
+    
+    if (aiThinkingSlider && aiThinkingValue) {
+        aiThinkingSlider.value = aiThinkingTime.toString();
+        aiThinkingValue.textContent = aiThinkingTime.toString();
+        
+        aiThinkingSlider.addEventListener('input', () => {
+            const value = parseInt(aiThinkingSlider.value);
+            aiThinkingTime = value;
+            aiThinkingValue.textContent = value.toString();
+            saveSettingsToCookie();
+        });
+    }
+    
+    // Чередование битков
+    const alternateStrikerToggle = document.getElementById('alternateStrikerToggle') as HTMLInputElement;
+    
+    if (alternateStrikerToggle) {
+        alternateStrikerToggle.checked = alternateStriker;
+        
+        alternateStrikerToggle.addEventListener('change', () => {
+            alternateStriker = alternateStrikerToggle.checked;
+            saveSettingsToCookie();
+        });
+    }
+    
+    // Штрафы AI
+    initAIPenaltiesSliders();
+    
+    // Инициализируем максимальное расстояние
+    updateMaxDistance();
 }
 
 /**
- * Функция начальной расстановки камней "от ворот".
+ * Инициализирует слайдеры штрафов AI
  */
-export function spawnAtGates(player: number): void {
-    const baseX = player === 1 ? 180 : canvas.width - 180;
-    const direction = player === 1 ? 1 : -1;
-    const groupOffsetY = (Math.random() - 0.5) * 80;
-    const dist1 = 90 + Math.random() * 30;
-    const dist2 = 90 + Math.random() * 30;
-
-    stones[0].x = baseX;
-    stones[0].y = canvas.height / 2 + groupOffsetY;
-    stones[1].x = baseX + (direction * 55);
-    stones[1].y = canvas.height / 2 - dist1 + groupOffsetY;
-    stones[2].x = baseX + (direction * 55);
-    stones[2].y = canvas.height / 2 + dist2 + groupOffsetY;
-
-    stones.forEach(s => { s.vx = 0; s.vy = 0; s.isOut = false; });
-    
-    GameState.lastStruckStone = null; 
-    GameState.hasPassedThrough = false; 
-    GameState.hitObstacle = false; 
-    GameState.isGoalScored = false;
-    GameState.resultTimer = 0;
-    GameState.aiAimTarget = null;
-    GameState.aiSelectedStone = null;
-    GameState.aiConsideredMoves = [];
-    GameState.lastUsedStriker = null;
-}
-export function initAlternateStrikerCheckbox(): void {
-    const checkbox = document.getElementById('alternateStrikerCheckbox') as HTMLInputElement;
-    if (!checkbox) {
-        console.warn('Чекбокс правила не найден в DOM.');
-        return;
-    }
-
-    // Устанавливаем состояние из переменной
-    checkbox.checked = alternateStriker;
-    
-    checkbox.addEventListener('change', () => {
-        alternateStriker = checkbox.checked;
-        if (!alternateStriker) {
-            GameState.lastUsedStriker = null;
-        }
-        saveSettingsToCookie(); // Сохраняем
-    });
+export function initAIPenaltiesSliders(): void {
+    // Здесь можно добавить инициализацию слайдеров штрафов AI
+    // Если они используются в ai/strategy.ts
 }

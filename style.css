@@ -1,347 +1,181 @@
 * {
+    margin: 0;
+    padding: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
 }
 
 html, body {
-    margin: 0;
-    padding: 0;
+    width: 100%;
     height: 100%;
     overflow: hidden;
-}
-
-body { 
-    background: #111; 
-    display: flex; 
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
-    font-family: sans-serif;
+    background: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     touch-action: none;
-    color: #ddd;
-    
-    height: 100dvh;
-    height: 100vh;
 }
 
-/* Верхняя панель управления */
-#controls {
-    display: flex;
-    gap: 20px;
-    padding: 10px 20px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    flex-shrink: 0;
-    margin: 10px 10px 5px 10px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-.control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: center;
-}
-
-#controls label {
-    font-size: 12px;
-    font-weight: 500;
-    color: #ccc;
-    white-space: nowrap;
-}
-
-#spreadValue, #aiThinkingValue {
-    display: inline-block;
-    min-width: 100px;
-    color: #4CAF50;
-    font-weight: bold;
-    font-family: monospace;
-    font-size: 11px;
-}
-
-#spreadSlider, #aiThinkingSlider {
-    width: 150px;
-    height: 5px;
-    cursor: pointer;
-    accent-color: #4CAF50;
-}
-
-/* Чекбокс */
-.checkbox-group {
-    justify-content: center;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    padding: 6px 10px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.05);
-    transition: background 0.2s;
-    user-select: none;
-}
-
-.checkbox-label:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.checkbox-label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: #4CAF50;
-}
-
-.checkbox-text {
-    font-size: 12px;
-    font-weight: 500;
-    color: #ccc;
-    white-space: nowrap;
-}
-
-/* Контейнер для canvas - занимает всё оставшееся пространство */
-.canvas-container {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 0;
-    width: 100%;
-    padding: 5px 10px;
-}
-
-/* Canvas сохраняет пропорции 1200:800 */
-canvas { 
-    background: #222;
-    border: 8px solid #1a0f07; 
-    border-radius: 4px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
-    
-    /* Размеры задаются через JavaScript */
+#gameCanvas {
     display: block;
+    /* CSS-масштабирование на весь экран с сохранением пропорций */
+    width: 100%;
+    height: 100%;
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain; /* Сохраняет пропорции, добавляет чёрные полосы */
+    background: #1a1a1a; /* Цвет полос по бокам */
+    cursor: crosshair;
+    /* Центрирование, если есть свободное место */
+    margin: auto;
 }
 
-/* Нижняя панель штрафов */
-#penaltiesControls {
+/* Центрирование canvas в контейнере */
+body {
     display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    padding: 10px 20px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     justify-content: center;
-    flex-shrink: 0;
-    margin: 5px 10px 10px 10px;
-}
-
-.penalty-group {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
     align-items: center;
-    min-width: 110px;
 }
 
-.penalty-group label {
-    font-size: 10px;
-    font-weight: 500;
-    color: #ccc;
-    white-space: nowrap;
-}
-
-.penalty-group span {
-    display: inline-block;
-    min-width: 40px;
-    color: #FF9800;
-    font-weight: bold;
-    font-family: monospace;
-    font-size: 10px;
-}
-
-.penalty-group input[type="range"] {
-    width: 100px;
-    height: 4px;
-    cursor: pointer;
-    accent-color: #FF9800;
-}
-
-/* Кнопка полноэкранного режима */
-.fullscreen-btn {
-    position: fixed;
+/* Кнопки управления */
+.controls {
+    position: absolute;
     top: 10px;
     right: 10px;
-    width: 44px;
-    height: 44px;
-    background: rgba(0, 0, 0, 0.6);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    gap: 10px;
+    z-index: 100;
+}
+
+.icon-btn {
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid #333;
     border-radius: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.05);
+}
+
+/* Панель настроек */
+.settings-panel {
+    position: absolute;
+    top: 60px;
+    right: 10px;
+    width: 320px;
+    max-height: 80vh;
+    background: rgba(255, 255, 255, 0.95);
+    border: 2px solid #333;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 99;
+    overflow-y: auto;
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.settings-panel.hidden {
+    opacity: 0;
+    transform: translateY(-20px);
+    pointer-events: none;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #333;
+    color: white;
+    border-radius: 10px 10px 0 0;
+}
+
+.settings-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
     color: white;
     font-size: 24px;
     cursor: pointer;
-    z-index: 9999;
-    transition: all 0.2s;
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
     line-height: 1;
+    padding: 0;
+    width: 30px;
+    height: 30px;
 }
 
-.fullscreen-btn:hover {
-    background: rgba(76, 175, 80, 0.8);
-    border-color: #4CAF50;
-    transform: scale(1.1);
+.close-btn:hover {
+    color: #ff6b6b;
 }
 
-.fullscreen-btn:active {
-    transform: scale(0.95);
+.settings-content {
+    padding: 16px;
 }
 
-/* Баннер cookies */
-.cookie-banner {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: rgba(30, 30, 30, 0.98);
-    backdrop-filter: blur(10px);
-    padding: 20px;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-    z-index: 10000;
-    border-top: 2px solid #4CAF50;
-    animation: slideUp 0.3s ease-out;
+.settings-section {
+    margin-bottom: 20px;
 }
 
-@keyframes slideUp {
-    from {
-        transform: translateY(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-.cookie-banner.hidden {
-    display: none !important;
-}
-
-.cookie-content {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-.cookie-content p {
-    color: #ddd;
+.settings-section h4 {
+    margin: 0 0 12px 0;
     font-size: 14px;
-    margin: 0;
-    flex: 1;
-    min-width: 300px;
-    line-height: 1.5;
-}
-
-.cookie-buttons {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-}
-
-.btn-accept, .btn-decline {
-    padding: 10px 24px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: all 0.2s;
+    color: #666;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
 }
 
-.btn-accept {
-    background: #4CAF50;
-    color: white;
-    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+.setting-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 10px;
 }
 
-.btn-accept:hover {
-    background: #45a049;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+.setting-item label {
+    flex: 0 0 100px;
+    font-size: 13px;
+    color: #333;
 }
 
-.btn-decline {
-    background: transparent;
-    color: #aaa;
-    border: 1px solid #555;
+.setting-item input[type="range"] {
+    flex: 1;
+    height: 6px;
+    cursor: pointer;
 }
 
-.btn-decline:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
-    border-color: #777;
+.setting-item span {
+    flex: 0 0 50px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
 }
 
-/* Адаптивность для маленьких экранов */
-@media screen and (max-width: 768px) {
-    #controls {
-        gap: 10px;
-        padding: 8px 15px;
-    }
-    
-    #spreadSlider, #aiThinkingSlider {
-        width: 120px;
-    }
-    
-    #penaltiesControls {
-        gap: 10px;
-        padding: 8px 15px;
-    }
-    
-    .penalty-group {
-        min-width: 90px;
-    }
-    
-    .penalty-group input[type="range"] {
-        width: 80px;
-    }
-    
-    canvas {
-        border-width: 6px;
-    }
+.setting-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
 }
 
-@media screen and (max-width: 480px) {
-    #controls {
-        flex-direction: column;
-        gap: 8px;
-    }
-    
-    #penaltiesControls {
-        flex-direction: column;
-    }
-    
-    .penalty-group {
-        flex-direction: row;
-        justify-content: space-between;
-        width: 100%;
-        min-width: auto;
-    }
-    
-    .penalty-group label {
-        font-size: 11px;
-    }
+/* Информационный элемент (без слайдера) */
+.info-item {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-top: 4px;
+}
+
+.info-value {
+    flex: 0 0 auto !important;
+    font-size: 14px !important;
+    color: #2196F3 !important;
+    font-weight: bold !important;
 }

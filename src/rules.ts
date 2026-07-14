@@ -5,6 +5,7 @@
  */
 
 import { GameState, stones, spawnAtGates } from "./state.js";
+import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from "./state.js";
 
 /**
  * Обрабатывает результат хода после полной остановки камней.

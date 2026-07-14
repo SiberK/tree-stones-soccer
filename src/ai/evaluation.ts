@@ -1,7 +1,7 @@
 import { Stone } from "../stone.js";
 import { Point } from "../math.js";
 import {
-	canvas, MAX_FORCE, spreadFactor, alternateStriker,
+	canvas, MAX_FORCE, spreadFactor, alternateStriker, LOGICAL_WIDTH, LOGICAL_HEIGHT,
 	advancementBonusFactor, retreatPenaltyFactor, noValidPassesPenalty,
 	triangleAcuteBonus, triangleObtusePenalty, nextShotBonus, nextTacticalBonus
 } from "../state.js";
@@ -124,13 +124,13 @@ export function calculateCollisionRisk(striker: Stone, angle: number, gates: Sto
 }
 
 export function evaluateFuturePosition(pos: Point, allStones: Stone[], currentStriker: Stone): number {
-	if (pos.x < 0 || pos.x > canvas.width || pos.y < 0 || pos.y > canvas.height) {
+	if (pos.x < 0 || pos.x >  LOGICAL_WIDTH  || pos.y < 0 || pos.y > LOGICAL_HEIGHT) {
 		return -5000;
 	}
 
 	let score: number = 0;
 
-	const normalizedProgress = 1 - (pos.x / canvas.width);
+	const normalizedProgress = 1 - (pos.x / LOGICAL_WIDTH);
 	const advancementBonus = normalizedProgress * normalizedProgress * 3000;
 	score += advancementBonus;
 
@@ -276,7 +276,7 @@ function evaluateNextShotPotential(pos: Point, others: Stone[], striker: Stone):
 	let bestPotential = -1000;
 
 	for (const vStriker of virtualStrikers) {
-		const goalTarget: Point = { x: 0, y: canvas.height / 2 };
+		const goalTarget: Point = { x: 0, y: LOGICAL_HEIGHT / 2 };
 
 		const allAvailable = [
 			{ x: pos.x, y: pos.y, radius: striker.radius } as Stone,

@@ -9,6 +9,7 @@ import { Stone } from "../stone.js";
 import { canvas, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH } from "../state.js";
 import { Point } from "../math.js";
 import { AIMove, MoveEvaluation } from "./types.js";
+import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from "../state.js";
 
 /**
  * Проверяет, проходит ли траектория через створ между двумя камнями
@@ -61,7 +62,7 @@ export function evaluateGoalShot(
     gates: Stone[]
 ): AIMove | null {
     // Цель — ворота противника
-    const targetGateX = striker.color === 'red' ? canvas.width : 0;
+    const targetGateX = striker.color === 'red' ? LOGICAL_WIDTH : 0;
     const targetGateY = GOAL_Y + GOAL_HEIGHT / 2;
     
     const dx = targetGateX - striker.x;
