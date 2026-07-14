@@ -1,63 +1,143 @@
-import { GameState, stones, canvas, spawnAtGates, initSpreadSlider, initAIThinkingSlider, initAlternateStrikerCheckbox, initAIPenaltiesSliders, loadSettingsFromCookie, checkCookieConsent, initCookieBanner, aiThinkingTime, cookiesAccepted } from "./state.js";
-import { GamePhysics } from "./physics.js";
+/**
+ * src/game.ts
+ */
+import { GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, canvas, spawnAtGates, initSpreadSlider, initAIThinkingSlider, initAlternateStrikerCheckbox, initAIPenaltiesSliders, loadSettingsFromCookie, checkCookieConsent, initCookieBanner, aiThinkingTime, cookiesAccepted } from "./state.js";
 import { AI } from "./ai/index.js";
 import { startAim, moveAim, endAim } from "./input.js";
-import { checkCleanPass, checkGoal, processTurnResult } from "./rules.js";
-import { render, setPendingAIMove } from "./renderer.js";
-/**
- * Рассчитывает оптимальные размеры canvas с сохранением пропорций 1200:800.
- * Вызывается при загрузке и при изменении размера окна.
- */
-function resizeCanvas() {
-    const container = document.querySelector('.canvas-container');
-    if (!container)
-        return;
-    const containerRect = container.getBoundingClientRect();
-    const availableWidth = containerRect.width;
-    const availableHeight = containerRect.height;
-    // Пропорции игрового поля
-    const gameWidth = 1200;
-    const gameHeight = 800;
-    const aspectRatio = gameWidth / gameHeight;
-    // Вычисляем размеры с сохранением пропорций
-    let canvasWidth = availableWidth;
-    let canvasHeight = canvasWidth / aspectRatio;
-    if (canvasHeight > availableHeight) {
-        canvasHeight = availableHeight;
-        canvasWidth = canvasHeight * aspectRatio;
-    }
-    // Устанавливаем CSS-размеры (внутренние размеры canvas остаются 1200x800)
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
-    console.log(`Canvas resized: ${canvasWidth.toFixed(0)}x${canvasHeight.toFixed(0)} (container: ${availableWidth.toFixed(0)}x${availableHeight.toFixed(0)})`);
-}
-/**
- * Генерирует спрайты всех камней при старте игры.
- * Это делается один раз, чтобы не генерировать спрайты во время игры.
- */
-function generateStoneSprites() {
-    // Ждём загрузки текстуры камня
-    const checkAndGenerate = () => {
-        const stoneImg = new Image();
-        stoneImg.src = 'assets/stone_tex.jpg';
-        stoneImg.onload = () => {
-            console.log('✓ Текстура камня загружена, генерируем спрайты...');
-            stones.forEach(s => s.generateSprite());
-            console.log('✓ Спрайты камней сгенерированы');
-        };
-        stoneImg.onerror = () => {
-            console.warn('✗ Не удалось загрузить текстуру камня, генерируем без текстуры');
-            stones.forEach(s => s.generateSprite());
-        };
-    };
-    checkAndGenerate();
-}
+import { processTurnResult } from "./rules.js";
+import { render, setPendingAIMove, addVisualEffect } from "./renderer.js";
+import { simulationController } from "./simulation/controller.js";
 let pendingAIMove = null;
+// ============================================================
+// ОПТИМИЗАЦИЯ FPS
+// ============================================================
+const TARGET_FPS = 30;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
+let lastFrameTime = 0;
+let needsRedraw = true;
+let lastScoreLeft = -1;
+let lastScoreRight = -1;
+let lastPlayer = -1;
+/**
+ * Обрабатывает произошедшие события и добавляет визуальные эффекты
+ */
+function handleOccurredEvents(events) {
+    for (const event of events) {
+        switch (event.eventType) {
+            case 'COLLISION': {
+                const data = event.data;
+                // Вспышка в точке столкновения
+                addVisualEffect({
+                    type: 'FLASH',
+                    x: data.collisionPoint.x,
+                    y: data.collisionPoint.y,
+                    duration: 15, // кадров
+                    color: 'rgba(255, 255, 200, 0.8)',
+                    radius: 40
+                });
+                needsRedraw = true;
+                break;
+            }
+            case 'CLEAN_PASS': {
+                const data = event.data;
+                // Подсветка точки прохода
+                addVisualEffect({
+                    type: 'FLASH',
+                    x: data.gateIntersection.x,
+                    y: data.gateIntersection.y,
+                    duration: 20,
+                    color: 'rgba(100, 255, 100, 0.8)',
+                    radius: 30
+                });
+                needsRedraw = true;
+                break;
+            }
+            case 'GOAL': {
+                const data = event.data;
+                const goalX = data.goalSide === 'left' ? GOAL_WIDTH : canvas.width - GOAL_WIDTH;
+                const goalY = GOAL_Y + GOAL_HEIGHT / 2;
+                // Большой эффект гола
+                addVisualEffect({
+                    type: 'FLASH',
+                    x: goalX,
+                    y: goalY,
+                    duration: 30,
+                    color: 'rgba(255, 215, 0, 1)',
+                    radius: 80
+                });
+                needsRedraw = true;
+                break;
+            }
+            case 'OUT': {
+                const data = event.data;
+                const stone = stones[data.stoneIndex];
+                // Эффект вылета
+                addVisualEffect({
+                    type: 'FLASH',
+                    x: stone.x,
+                    y: stone.y,
+                    duration: 15,
+                    color: 'rgba(255, 100, 100, 0.6)',
+                    radius: 35
+                });
+                needsRedraw = true;
+                break;
+            }
+        }
+    }
+}
+/**
+ * Проверяет, нужно ли перерисовывать кадр.
+ */
+function checkIfNeedsRedraw() {
+    // Если идёт симуляция - всегда рисуем
+    if (simulationController.isSimulating()) {
+        return true;
+    }
+    // Если есть движение камней - рисуем
+    const hasMovement = stones.some(s => !s.isOut && (Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1));
+    if (hasMovement) {
+        return true;
+    }
+    // Если игрок целится - рисуем
+    if (GameState.isAiming) {
+        return true;
+    }
+    // Если бот "думает" - рисуем
+    if (GameState.currentPlayer === 2 && GameState.aiSelectedStone) {
+        return true;
+    }
+    // Если есть таймер результата - рисуем
+    if (GameState.resultTimer > 0) {
+        return true;
+    }
+    // Если есть визуализация AI - рисуем
+    if (GameState.aiConsideredMoves.length > 0) {
+        return true;
+    }
+    // Если изменился счёт - рисуем
+    if (GameState.scoreLeft !== lastScoreLeft || GameState.scoreRight !== lastScoreRight) {
+        lastScoreLeft = GameState.scoreLeft;
+        lastScoreRight = GameState.scoreRight;
+        return true;
+    }
+    // Если изменился текущий игрок - рисуем
+    if (GameState.currentPlayer !== lastPlayer) {
+        lastPlayer = GameState.currentPlayer;
+        return true;
+    }
+    // Если есть текст результата - рисуем
+    if (GameState.turnResultText !== "") {
+        return true;
+    }
+    // Ничего не меняется - не рисуем
+    return false;
+}
 function processAITurn() {
     if (GameState.currentPlayer !== 2)
         return;
     const allStopped = stones.every(s => Math.abs(s.vx) < 0.1 && Math.abs(s.vy) < 0.1);
-    if (allStopped && GameState.resultTimer === 0) {
+    if (allStopped && GameState.resultTimer === 0 && !simulationController.isSimulating()) {
         GameState.aiThinkingTimer++;
         if (GameState.aiThinkingTimer === 1 && !pendingAIMove) {
             GameState.hasPassedThrough = false;
@@ -68,10 +148,18 @@ function processAITurn() {
                 GameState.aiSelectedStone = pendingAIMove.stone;
                 GameState.aiAimTarget = { x: pendingAIMove.targetX, y: pendingAIMove.targetY };
                 setPendingAIMove(pendingAIMove);
+                needsRedraw = true;
             }
         }
         if (GameState.aiThinkingTimer > aiThinkingTime && pendingAIMove) {
-            AI.executeMove(pendingAIMove);
+            const stoneIndex = stones.indexOf(pendingAIMove.stone);
+            const move = {
+                strikerIndex: stoneIndex,
+                force: pendingAIMove.force,
+                angle: Math.atan2(pendingAIMove.targetY - pendingAIMove.stone.y, pendingAIMove.targetX - pendingAIMove.stone.x),
+                playerIndex: 2
+            };
+            simulationController.startSimulation(stones, move);
             GameState.lastStruckStone = pendingAIMove.stone;
             GameState.aiConsideredMoves = [];
             pendingAIMove = null;
@@ -79,6 +167,7 @@ function processAITurn() {
             GameState.aiSelectedStone = null;
             GameState.aiAimTarget = null;
             GameState.aiThinkingTimer = 0;
+            needsRedraw = true;
         }
     }
     else {
@@ -89,13 +178,10 @@ function processAITurn() {
             GameState.aiSelectedStone = null;
             GameState.aiAimTarget = null;
             GameState.aiConsideredMoves = [];
+            needsRedraw = true;
         }
     }
 }
-/**
- * Инициализирует кнопку полноэкранного режима.
- * Поддерживает стандартный Fullscreen API и webkit-префикс для Safari.
- */
 function initFullscreenButton() {
     const btn = document.getElementById('fullscreenBtn');
     if (!btn)
@@ -103,7 +189,6 @@ function initFullscreenButton() {
     btn.addEventListener('click', () => {
         const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
         if (!isFullscreen) {
-            // Входим в полноэкранный режим
             const elem = document.documentElement;
             if (elem.requestFullscreen) {
                 elem.requestFullscreen().catch(err => {
@@ -115,7 +200,6 @@ function initFullscreenButton() {
             }
         }
         else {
-            // Выходим из полноэкранного режима
             if (document.exitFullscreen) {
                 document.exitFullscreen();
             }
@@ -124,7 +208,6 @@ function initFullscreenButton() {
             }
         }
     });
-    // Отслеживаем изменение состояния
     const updateButton = () => {
         const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
         btn.textContent = isFullscreen ? '⛶' : '⛶';
@@ -133,46 +216,86 @@ function initFullscreenButton() {
     document.addEventListener('fullscreenchange', updateButton);
     document.addEventListener('webkitfullscreenchange', updateButton);
 }
-function gameLoop() {
-    GamePhysics.checkCollisions(stones);
-    stones.forEach(s => s.update(canvas.width, canvas.height));
-    checkCleanPass();
-    checkGoal();
-    processTurnResult();
-    processAITurn();
-    render();
+function gameLoop(currentTime = 0) {
     requestAnimationFrame(gameLoop);
+    const elapsed = currentTime - lastFrameTime;
+    if (elapsed < FRAME_INTERVAL) {
+        return;
+    }
+    lastFrameTime = currentTime - (elapsed % FRAME_INTERVAL);
+    if (GameState.currentPlayer !== lastPlayer) {
+        needsRedraw = true;
+        lastPlayer = GameState.currentPlayer;
+    }
+    // УБРАНО: console.log('[Redraw]...')
+    if (GameState.resultTimer > 0) {
+        GameState.resultTimer--;
+        needsRedraw = true;
+    }
+    needsRedraw = checkIfNeedsRedraw();
+    if (!needsRedraw) {
+        return;
+    }
+    const deltaTime = elapsed / 1000;
+    if (simulationController.isSimulating()) {
+        const occurredEvents = simulationController.updatePlayback(deltaTime, stones);
+        if (occurredEvents.length > 0) {
+            handleOccurredEvents(occurredEvents);
+        }
+        if (!simulationController.isSimulating()) {
+            const finalState = simulationController.getFinalState();
+            if (finalState) {
+                GameState.hasPassedThrough = finalState.hasPassedThrough;
+                GameState.isGoalScored = finalState.isGoalScored;
+                GameState.hitObstacle = finalState.hitObstacle;
+            }
+            processTurnResult();
+            needsRedraw = true;
+        }
+    }
+    processAITurn();
+    if (needsRedraw) {
+        render();
+    }
 }
 // Инициализация ввода
-canvas.addEventListener('mousedown', startAim);
-window.addEventListener('mousemove', moveAim);
-window.addEventListener('mouseup', endAim);
-canvas.addEventListener('touchstart', startAim, { passive: false });
-canvas.addEventListener('touchmove', moveAim, { passive: false });
-window.addEventListener('touchend', endAim);
-// === ПРОВЕРКА СОГЛАСИЯ НА COOKIES ===
+canvas.addEventListener('mousedown', (e) => {
+    needsRedraw = true;
+    startAim(e);
+});
+window.addEventListener('mousemove', (e) => {
+    if (GameState.isAiming)
+        needsRedraw = true;
+    moveAim(e);
+});
+window.addEventListener('mouseup', (e) => {
+    needsRedraw = true;
+    endAim();
+});
+canvas.addEventListener('touchstart', (e) => {
+    needsRedraw = true;
+    startAim(e);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+    if (GameState.isAiming)
+        needsRedraw = true;
+    moveAim(e);
+}, { passive: false });
+window.addEventListener('touchend', (e) => {
+    needsRedraw = true;
+    endAim();
+});
 checkCookieConsent();
 initCookieBanner();
-// === ЗАГРУЗКА СОХРАНЁННЫХ НАСТРОЕК ===
 if (cookiesAccepted) {
     loadSettingsFromCookie();
 }
-// Инициализация элементов управления
 initSpreadSlider();
 initAIThinkingSlider();
 initAlternateStrikerCheckbox();
 initAIPenaltiesSliders();
-// Инициализация полноэкранного режима
 initFullscreenButton();
-// Первичный расчёт размеров canvas
-resizeCanvas();
-// Пересчёт при изменении размера окна
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('orientationchange', () => {
-    setTimeout(resizeCanvas, 100); // Задержка для корректного расчёта после поворота
-});
 spawnAtGates(1);
-// Генерация спрайтов камней
-generateStoneSprites();
-gameLoop();
+needsRedraw = true;
+requestAnimationFrame(gameLoop);
 //# sourceMappingURL=game.js.map

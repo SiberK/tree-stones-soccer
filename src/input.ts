@@ -1,12 +1,13 @@
-import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor, noRepeatStriker } from "./state.js";
+import { GameState, stones, FORCE_FACTOR, MAX_FORCE, canvas, spreadFactor, alternateStriker } from "./state.js";
 import { GameMath, Point } from "./math.js";
 import { Stone } from "./stone.js";
+import { simulationController } from "./simulation/controller.js";
+import { ShotData } from "./simulation/types.js";
 
 function getStoneAt(x: number, y: number): Stone | undefined {
     const stone = stones.find(s => !s.isOut && Math.hypot(s.x - x, s.y - y) < s.radius + 20);
     
-    // Проверка правила "не повторять биток"
-    if (stone && noRepeatStriker && GameState.lastUsedStriker === stone) {
+    if (stone && alternateStriker && GameState.lastUsedStriker === stone) {
         return undefined;
     }
     
@@ -41,6 +42,7 @@ export function getMousePos(e: MouseEvent | TouchEvent): Point {
 export function startAim(e: MouseEvent | TouchEvent): void {
     if (GameState.currentPlayer === 2) return;
     if (stones.some(s => Math.abs(s.vx) > 0.1 || Math.abs(s.vy) > 0.1)) return;
+    if (simulationController.isSimulating()) return; // Блокируем ввод во время симуляции
 
     const pos = getMousePos(e);
     GameState.selectedStone = getStoneAt(pos.x, pos.y) || null;
@@ -98,8 +100,16 @@ export function endAim(): void {
     const currentStdDev = (force / MAX_FORCE) ** 2 * spreadFactor;
     const finalAngle = GameMath.randomGaussian(baseAngle, currentStdDev);
 
-    stone.vx = Math.cos(finalAngle) * force;
-    stone.vy = Math.sin(finalAngle) * force;
+    // Запускаем симуляцию для игрока
+    const stoneIndex = stones.indexOf(stone);
+    const move: ShotData = {
+        strikerIndex: stoneIndex,
+        force: force,
+        angle: finalAngle,
+        playerIndex: 1
+    };
+    
+    simulationController.startSimulation(stones, move);
     
     GameState.selectedStone = null;
 }

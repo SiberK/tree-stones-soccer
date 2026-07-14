@@ -51,7 +51,7 @@ export class AI {
                     }
                 } else {
                     // Логирование отклонённых вариантов
-                    console.debug(`AI: Отклонён вариант (${evl.move.type}): ${evl.rejectReason}`);
+//                    console.debug(`AI: Отклонён вариант (${evl.move.type}): ${evl.rejectReason}`);
                 }
             }
         }

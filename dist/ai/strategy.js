@@ -1,169 +1,173 @@
-import { canvas, MAX_FORCE, GameState, alternateStriker, GOAL_WIDTH, GOAL_Y, GOAL_HEIGHT, riskPenaltyFactor, forcePenaltyFactor, gatesBlockPenalty, gatesReachPenalty } from "../state.js";
-import { simulateStopPosition } from "./physics.js";
-import { isPathClear, calculateCollisionRisk, evaluateFuturePosition, checkLineIntersection, hasReachedGates } from "./evaluation.js";
 /**
- * Оценивает возможность удара на гол.
+ * src/ai/strategy.ts
  *
- * Проверяет ДВА условия:
- * 1. Траектория проходит через ворота между двумя другими камнями
- * 2. Траектория попадает в створ ворот соперника
- *
- * Целевая точка устанавливается далеко за пределами поля,
- * чтобы линия удара гарантированно пересекла створ ворот.
+ * Стратегическая оценка ходов для AI.
+ * МИНИМАЛЬНАЯ ВЕРСИЯ с проверкой створа.
+ */
+import { canvas, GOAL_Y, GOAL_HEIGHT } from "../state.js";
+/**
+ * Проверяет, проходит ли траектория через створ между двумя камнями
+ */
+function checkGatePass(striker, angle, gates) {
+    if (gates.length !== 2)
+        return { passes: false, blocked: false };
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    // Векторы от битка к камням ворот
+    const v1x = gates[0].x - striker.x;
+    const v1y = gates[0].y - striker.y;
+    const v2x = gates[1].x - striker.x;
+    const v2y = gates[1].y - striker.y;
+    // Векторное произведение для определения сторон
+    const cross1 = v1x * dy - v1y * dx;
+    const cross2 = v2x * dy - v2y * dx;
+    // Если знаки одинаковые — камни на одной стороне, створа нет
+    if (cross1 * cross2 > 0) {
+        return { passes: false, blocked: false };
+    }
+    // Простая проверка: биток проходит между камнями
+    // Вычисляем расстояние от линии траектории до каждого камня
+    const dist1 = Math.abs(cross1) / Math.hypot(dx, dy);
+    const dist2 = Math.abs(cross2) / Math.hypot(dx, dy);
+    const minDist = Math.min(dist1, dist2);
+    const requiredDist = striker.radius + gates[0].radius + 5;
+    if (minDist < requiredDist) {
+        return { passes: false, blocked: true };
+    }
+    return { passes: true, blocked: false };
+}
+/**
+ * Оценивает удар для гола
  */
 export function evaluateGoalShot(striker, gates) {
-    // Проверка правила "Чередование битков"
-    if (alternateStriker && GameState.lastUsedStriker === striker) {
-        return null;
-    }
-    // === ОПРЕДЕЛЯЕМ ГЕОМЕТРИЮ ВОРОТ СОПЕРНИКА ===
-    // Створ ворот — это отрезок на левой стороне поля
-    const goalStart = { x: GOAL_WIDTH, y: GOAL_Y };
-    const goalEnd = { x: GOAL_WIDTH, y: GOAL_Y + GOAL_HEIGHT };
-    const goalCenter = { x: GOAL_WIDTH, y: GOAL_Y + GOAL_HEIGHT / 2 };
-    // === ПРОВЕРКА 1: Проходит ли траектория через ворота между камнями? ===
-    // Используем goalCenter как промежуточную цель для проверки isPathClear
-    if (!isPathClear(striker, goalCenter, gates))
-        return null;
-    // === ПРОВЕРКА 2: Попадает ли траектория в створ ворот? ===
-    // Создаём дальнюю точку цели ЗА пределами поля, чтобы линия гарантированно
-    // пересекла створ ворот (если направление правильное)
-    const dx = goalCenter.x - striker.x;
-    const dy = goalCenter.y - striker.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist === 0)
-        return null; // Камень уже в центре ворот
-    // Направление от камня к центру ворот
-    const dirX = dx / dist;
-    const dirY = dy / dist;
-    // Целевая точка далеко за пределами поля (2000px по направлению удара)
-    const farTarget = {
-        x: striker.x + dirX * 2000,
-        y: striker.y + dirY * 2000
-    };
-    // Проверяем, пересекает ли линия удара створ ворот
-    if (!checkLineIntersection(striker, farTarget, goalStart, goalEnd)) {
-        return null; // Траектория не попадает в створ
-    }
-    // === РАСЧЁТ РИСКА И СОЗДАНИЕ ХОДА ===
+    // Цель — ворота противника
+    const targetGateX = striker.color === 'red' ? canvas.width : 0;
+    const targetGateY = GOAL_Y + GOAL_HEIGHT / 2;
+    const dx = targetGateX - striker.x;
+    const dy = targetGateY - striker.y;
     const angle = Math.atan2(dy, dx);
-    const risk = calculateCollisionRisk(striker, angle, gates, MAX_FORCE);
-    // При большом разбросе ужесточаем требования к голу
-    if (risk > 0.4)
-        return null;
-    const stopPos = simulateStopPosition(striker.x, striker.y, angle, MAX_FORCE);
-    return {
+    // Проверяем, проходит ли через створ
+    const gateCheck = checkGatePass(striker, angle, gates);
+    if (!gateCheck.passes) {
+        return null; // Не можем забить через створ
+    }
+    const distance = Math.hypot(dx, dy);
+    const force = Math.min(distance * 0.03, 18); // Простая формула силы
+    const move = {
         stone: striker,
-        targetX: farTarget.x, // Целевая точка далеко за пределами поля
-        targetY: farTarget.y,
+        targetX: targetGateX,
+        targetY: targetGateY,
         score: 10000,
-        force: MAX_FORCE,
+        force: force,
         isFinalShot: true,
-        risk: risk,
+        risk: 0.2,
         type: 'GOAL',
-        stopX: stopPos.x,
-        stopY: stopPos.y
+        blockedByGates: gateCheck.blocked
     };
+    return move;
 }
 /**
- * Ищет лучшие тактические проходы.
- * Учитывает ВСЕ варианты, включая те, что не достигают ворот.
+ * Находит лучшие тактические ходы
  */
 export function findBestTacticalMoves(striker, gateCenter, gates, allStones) {
-    // Проверка правила "Чередование битков"
-    if (alternateStriker && GameState.lastUsedStriker === striker) {
-        return [];
-    }
     const evaluations = [];
-    const anglesOffset = [-0.3, -0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.3];
-    const forceRatios = [0.1, 0.2, 0.4, 0.6, 0.8, 1.0];
-    const baseDx = gateCenter.x - striker.x;
-    const baseDy = gateCenter.y - striker.y;
-    const baseAngle = Math.atan2(baseDy, baseDx);
-    for (const angleOff of anglesOffset) {
-        const currentAngle = baseAngle + angleOff;
-        const tempTarget = {
-            x: striker.x + Math.cos(currentAngle) * 1000,
-            y: striker.y + Math.sin(currentAngle) * 1000
-        };
-        // === ПРОВЕРКА 1: проходит ли траектория через ворота? ===
-        const passesThroughGates = isPathClear(striker, tempTarget, gates);
-        for (const ratio of forceRatios) {
-            let force = MAX_FORCE * ratio;
-            force = Math.max(6, force);
-            const futurePos = simulateStopPosition(striker.x, striker.y, currentAngle, force);
-            // === ПРОВЕРКА 2: достигает ли камень линии ворот? ===
-            const reachesGates = hasReachedGates(striker, futurePos, gates);
-            const positionScore = evaluateFuturePosition(futurePos, allStones, striker);
-            const risk = calculateCollisionRisk(striker, currentAngle, gates, force);
-            const riskPenalty = risk * risk * riskPenaltyFactor; // Было 4000
-            const forceRatio = force / MAX_FORCE;
-            const excessiveForcePenalty = forceRatio * forceRatio * forcePenaltyFactor; // Было 300
-            // === ШТРАФЫ ЗА БЛОКИРОВКУ ===
-            let gatesPenalty = 0;
-            let blockedByGates = false;
-            if (!passesThroughGates) {
-                gatesPenalty = gatesBlockPenalty; // Используем переменную из state
-                blockedByGates = true;
-            }
-            else if (!reachesGates) {
-                gatesPenalty = gatesReachPenalty; // Используем переменную из state
-                blockedByGates = true;
-            }
-            const totalScore = positionScore - riskPenalty - excessiveForcePenalty - gatesPenalty;
-            const move = {
-                stone: striker,
-                targetX: tempTarget.x,
-                targetY: tempTarget.y,
-                score: totalScore,
-                force: force,
-                isFinalShot: false,
-                risk: risk,
-                type: 'PASS',
-                stopX: futurePos.x,
-                stopY: futurePos.y,
-                blockedByGates: blockedByGates
-            };
-            const rejected = totalScore < -2000 || blockedByGates;
-            evaluations.push({
-                move,
-                positionScore,
-                riskPenalty,
-                forcePenalty: excessiveForcePenalty,
-                totalScore,
-                rejected,
-                rejectReason: blockedByGates
-                    ? (!reachesGates ? "Не достигает ворот" : "Не проходит через ворота")
-                    : (rejected ? `Score ${totalScore.toFixed(0)} < -2000` : undefined),
-                blockedByGates
-            });
+    const numAngles = 36;
+    const numForces = 6;
+    for (let i = 0; i < numAngles; i++) {
+        const angle = (i / numAngles) * Math.PI * 2;
+        for (let j = 1; j <= numForces; j++) {
+            const force = (j / numForces) * 18;
+            const evaluation = evaluateTacticalMove(striker, angle, force, gates, gateCenter);
+            evaluations.push(evaluation);
         }
     }
-    return evaluations;
+    // Сортируем по totalScore
+    evaluations.sort((a, b) => b.totalScore - a.totalScore);
+    return evaluations.slice(0, 10);
 }
 /**
- * Аварийный ход.
+ * Оценивает один тактический ход
  */
-export function getEmergencyMove(stones) {
-    // Фильтруем запрещённые камни
-    const available = alternateStriker
-        ? stones.filter(s => s !== GameState.lastUsedStriker)
-        : stones;
+function evaluateTacticalMove(striker, angle, force, gates, gateCenter) {
+    let score = 0;
+    let rejected = false;
+    let rejectReason = '';
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const targetX = striker.x + dx * 1000;
+    const targetY = striker.y + dy * 1000;
+    // Проверяем створ
+    const gateCheck = checkGatePass(striker, angle, gates);
+    // Штраф за удар мимо створа
+    if (!gateCheck.passes && gates.length === 2) {
+        score -= 5000;
+        rejected = true;
+        rejectReason = 'Удар мимо створа';
+    }
+    // Бонус за чистый проход
+    if (gateCheck.passes) {
+        score += 1000;
+    }
+    // Расстояние до ворот
+    const stopX = striker.x + dx * (force / 0.0202);
+    const stopY = striker.y + dy * (force / 0.0202);
+    const distToGate = Math.hypot(stopX - gateCenter.x, stopY - gateCenter.y);
+    if (distToGate < GOAL_HEIGHT) {
+        score += 5000;
+    }
+    else if (distToGate < GOAL_HEIGHT * 2) {
+        score += 2000;
+    }
+    // Штраф за риск
+    const risk = gateCheck.blocked ? 0.8 : (gateCheck.passes ? 0.1 : 0.6);
+    score -= risk * 4000;
+    // Штраф за силу
+    score -= (force / 18) * 300;
+    const move = {
+        stone: striker,
+        targetX,
+        targetY,
+        score,
+        force,
+        isFinalShot: false,
+        risk,
+        type: 'PASS',
+        stopX,
+        stopY,
+        blockedByGates: gateCheck.blocked
+    };
+    return {
+        move,
+        positionScore: score,
+        riskPenalty: risk * 4000,
+        forcePenalty: (force / 18) * 300,
+        totalScore: score,
+        rejected,
+        rejectReason,
+        blockedByGates: gateCheck.blocked
+    };
+}
+/**
+ * Возвращает экстренный ход
+ */
+export function getEmergencyMove(available) {
     if (available.length === 0)
         return null;
-    const striker = available.reduce((prev, curr) => Math.abs(curr.y - canvas.height / 2) < Math.abs(prev.y - canvas.height / 2) ? curr : prev);
-    const stopPos = simulateStopPosition(striker.x, striker.y, Math.atan2(canvas.height / 2 - striker.y, striker.x - 400 - striker.x), 10);
+    const striker = available[0];
+    const angle = Math.random() * Math.PI * 2;
+    const force = 8;
+    const targetX = striker.x + Math.cos(angle) * 1000;
+    const targetY = striker.y + Math.sin(angle) * 1000;
     return {
         stone: striker,
-        targetX: striker.x - 400,
-        targetY: canvas.height / 2,
+        targetX,
+        targetY,
         score: -1000,
-        force: 10,
+        force,
         isFinalShot: false,
-        risk: 1.0,
+        risk: 0.5,
         type: 'EMERGENCY',
-        stopX: stopPos.x,
-        stopY: stopPos.y
+        blockedByGates: false
     };
 }
 //# sourceMappingURL=strategy.js.map

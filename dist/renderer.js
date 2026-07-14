@@ -7,6 +7,174 @@
  * - Встроенный FPS-счётчик
  */
 import { ctx, canvas, GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, MAX_FORCE, FORCE_FACTOR, spreadFactor } from "./state.js";
+import { positionAtTime, velocityAtTime } from "./simulation/math.js";
+import { STOP_THRESHOLD_RATIO } from "./state.js";
+export function drawAimIndicator(stone, targetX, targetY, isPlayer) {
+    if (!stone)
+        return;
+    let dx, dy;
+    if (isPlayer) {
+        dx = stone.x - GameState.mouseX;
+        dy = stone.y - GameState.mouseY;
+    }
+    else {
+        dx = targetX - stone.x;
+        dy = targetY - stone.y;
+    }
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0)
+        return;
+    let force;
+    if (isPlayer) {
+        const maxPull = MAX_FORCE / FORCE_FACTOR;
+        const pull = Math.min(dist, maxPull);
+        const ndx = (dx / dist) * pull;
+        const ndy = (dy / dist) * pull;
+        force = Math.hypot(ndx, ndy) * FORCE_FACTOR;
+    }
+    else {
+        force = pendingAIMove ? pendingAIMove.force : Math.hypot(dx, dy) * 0.1;
+    }
+    const angle = Math.atan2(dy, dx);
+    const spreadValue = spreadFactor;
+    const spread = (force / MAX_FORCE) * spreadValue;
+    const len = force * 13;
+    const col = isPlayer ? "rgba(153, 182, 23, 0.86)" : "rgba(255, 166, 0, 0.86)";
+    const scol = isPlayer ? "rgba(153, 182, 23, 0.86)" : "rgba(255, 166, 0, 0.86)";
+    // Рисуем конус прицеливания
+    ctx.beginPath();
+    ctx.moveTo(stone.x, stone.y);
+    ctx.arc(stone.x, stone.y, len, angle - spread, angle + spread);
+    ctx.lineTo(stone.x, stone.y);
+    ctx.fillStyle = scol;
+    ctx.fill();
+    // Рисуем центральную линию
+    ctx.beginPath();
+    ctx.moveTo(stone.x, stone.y);
+    ctx.lineTo(stone.x + Math.cos(angle) * len, stone.y + Math.sin(angle) * len);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // === ОТЛАДОЧНАЯ ВИЗУАЛИЗАЦИЯ: траектория битка ===
+    if (isPlayer && force > 0.1) {
+        // Вычисляем начальную скорость битка
+        const vx = Math.cos(angle) * force;
+        const vy = Math.sin(angle) * force;
+        // Порог остановки
+        const stopThreshold = stone.radius * STOP_THRESHOLD_RATIO;
+        // Вычисляем время полной остановки
+        const speed = Math.hypot(vx, vy);
+        const stopTime = speed > stopThreshold ? -Math.log(stopThreshold / speed) / 0.0202 : 0;
+        // Точка остановки
+        const finalX = positionAtTime(stone.x, vx, stopTime);
+        const finalY = positionAtTime(stone.y, vy, stopTime);
+        // Рисуем точку остановки (большой красный круг)
+        ctx.beginPath();
+        ctx.arc(finalX, finalY, 8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 0, 0, 0.8)";
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Рисуем крестик в точке остановки
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(finalX - 12, finalY);
+        ctx.lineTo(finalX + 12, finalY);
+        ctx.moveTo(finalX, finalY - 12);
+        ctx.lineTo(finalX, finalY + 12);
+        ctx.stroke();
+        // === ПОКАДРОВАЯ ВИЗУАЛИЗАЦИЯ ===
+        // Рисуем точки с интервалом 1 кадр (2 игровые единицы при 30 FPS)
+        const frameInterval = 2; // 1 кадр = 2 игровые единицы
+        let t = frameInterval;
+        let pointIndex = 0;
+        while (t < stopTime) {
+            const px = positionAtTime(stone.x, vx, t);
+            const py = positionAtTime(stone.y, vy, t);
+            // Проверяем, не остановился ли камень
+            const currentSpeed = Math.hypot(velocityAtTime(vx, t), velocityAtTime(vy, t));
+            if (currentSpeed < stopThreshold)
+                break;
+            // Рисуем точку (маленький круг)
+            ctx.beginPath();
+            ctx.arc(px, py, 3, 0, Math.PI * 2);
+            // Чередование цветов для наглядности
+            if (pointIndex % 2 === 0) {
+                ctx.fillStyle = "rgba(0, 255, 255, 0.6)";
+            }
+            else {
+                ctx.fillStyle = "rgba(255, 255, 0, 0.6)";
+            }
+            ctx.fill();
+            // Рисуем номер кадра (каждые 5 точек)
+            if (pointIndex % 5 === 0 && pointIndex > 0) {
+                ctx.fillStyle = "white";
+                ctx.font = "bold 10px monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(`${pointIndex}`, px, py - 8);
+            }
+            t += frameInterval;
+            pointIndex++;
+        }
+        // Подпись "СТОП" у точки остановки
+        ctx.fillStyle = "white";
+        ctx.font = "bold 12px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("СТОП", finalX, finalY + 15);
+    }
+}
+const activeEffects = [];
+/**
+ * Добавляет визуальный эффект
+ */
+export function addVisualEffect(effect) {
+    activeEffects.push(Object.assign(Object.assign({}, effect), { currentFrame: 0 }));
+    needsRedraw = true;
+}
+/**
+ * Отрисовывает активные эффекты
+ */
+function drawVisualEffects() {
+    for (let i = activeEffects.length - 1; i >= 0; i--) {
+        const effect = activeEffects[i];
+        // Прогресс анимации (0..1)
+        const progress = effect.currentFrame / effect.duration;
+        // Радиус расширяется, прозрачность уменьшается
+        const currentRadius = effect.radius * (0.5 + progress * 0.5);
+        const alpha = 1 - progress;
+        // Извлекаем RGB из цвета
+        const colorMatch = effect.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        let r = 255, g = 255, b = 255, a = alpha;
+        if (colorMatch) {
+            r = parseInt(colorMatch[1]);
+            g = parseInt(colorMatch[2]);
+            b = parseInt(colorMatch[3]);
+            if (colorMatch[4]) {
+                a = parseFloat(colorMatch[4]) * alpha;
+            }
+        }
+        // Рисуем вспышку с градиентом
+        const gradient = ctx.createRadialGradient(effect.x, effect.y, 0, effect.x, effect.y, currentRadius);
+        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${a})`);
+        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, currentRadius, 0, Math.PI * 2);
+        ctx.fill();
+        // Обновляем кадр
+        effect.currentFrame++;
+        // Удаляем завершённые эффекты
+        if (effect.currentFrame >= effect.duration) {
+            activeEffects.splice(i, 1);
+        }
+    }
+}
+// Флаг для принудительной перерисовки при эффектах
+let needsRedraw = true;
 // Текстура стола
 const tableTexture = new Image();
 tableTexture.src = 'assets/table.jpg';
@@ -51,51 +219,6 @@ export function drawGate(x, color) {
     ctx.strokeRect(x, GOAL_Y, GOAL_WIDTH, GOAL_HEIGHT);
     ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
     ctx.fillRect(x, GOAL_Y, GOAL_WIDTH, GOAL_HEIGHT);
-}
-export function drawAimIndicator(stone, targetX, targetY, isPlayer) {
-    if (!stone)
-        return;
-    let dx, dy;
-    if (isPlayer) {
-        dx = stone.x - GameState.mouseX;
-        dy = stone.y - GameState.mouseY;
-    }
-    else {
-        dx = targetX - stone.x;
-        dy = targetY - stone.y;
-    }
-    const dist = Math.hypot(dx, dy);
-    if (dist === 0)
-        return;
-    let force;
-    if (isPlayer) {
-        const maxPull = MAX_FORCE / FORCE_FACTOR;
-        const pull = Math.min(dist, maxPull);
-        const ndx = (dx / dist) * pull;
-        const ndy = (dy / dist) * pull;
-        force = Math.hypot(ndx, ndy) * FORCE_FACTOR;
-    }
-    else {
-        force = pendingAIMove ? pendingAIMove.force : Math.hypot(dx, dy) * 0.1;
-    }
-    const angle = Math.atan2(dy, dx);
-    const spreadValue = spreadFactor;
-    const spread = (force / MAX_FORCE) * spreadValue;
-    const len = force * 13;
-    const col = isPlayer ? "rgba(153, 182, 23, 0.86)" : "rgba(255, 166, 0, 0.86)";
-    const scol = isPlayer ? "rgba(153, 182, 23, 0.86)" : "rgba(255, 166, 0, 0.86)";
-    ctx.beginPath();
-    ctx.moveTo(stone.x, stone.y);
-    ctx.arc(stone.x, stone.y, len, angle - spread, angle + spread);
-    ctx.lineTo(stone.x, stone.y);
-    ctx.fillStyle = scol;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(stone.x, stone.y);
-    ctx.lineTo(stone.x + Math.cos(angle) * len, stone.y + Math.sin(angle) * len);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 2;
-    ctx.stroke();
 }
 // ============================================================
 // КЭШ ФОНА (ОПТИМИЗАЦИЯ)
@@ -342,7 +465,6 @@ export function render() {
         ctx.font = "bold 26px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(GameState.turnResultText, canvas.width / 2, 70);
-        GameState.resultTimer--;
     }
     else if (stones.every(s => Math.abs(s.vx) < 0.1 && Math.abs(s.vy) < 0.1)) {
         ctx.fillStyle = GameState.currentPlayer === 1 ? "#4CAF50" : "#FF9800";
@@ -361,7 +483,16 @@ export function render() {
     if (GameState.currentPlayer === 2 && GameState.aiConsideredMoves.length > 0) {
         drawAIConsideredMoves();
     }
-    // 6. Встроенный FPS-счётчик
+    // 6. Визуализация расчетов ИИ
+    if (GameState.currentPlayer === 2 && GameState.aiConsideredMoves.length > 0) {
+        drawAIConsideredMoves();
+    }
+    // 7. Визуальные эффекты (вспышки при событиях)
+    if (activeEffects.length > 0) {
+        drawVisualEffects();
+        needsRedraw = true; // Пока есть эффекты — перерисовываем
+    }
+    // 8. Встроенный FPS-счётчик
     updateFPS();
     drawFPS();
 }
