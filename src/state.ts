@@ -33,9 +33,8 @@ canvas.height = LOGICAL_HEIGHT;
 // ============================================================
 // КОНСТАНТЫ ПОЛЯ (в логических координатах)
 // ============================================================
-
-export const GOAL_Y = 150;
 export const GOAL_HEIGHT = 200;
+export const GOAL_Y = (LOGICAL_HEIGHT - GOAL_HEIGHT)/2;
 export const GOAL_WIDTH = 40;
 
 /**
@@ -318,30 +317,32 @@ export function loadSettingsFromCookie(): void {
 export function spawnAtGates(player: number): void {
     stones.length = 0;
     
-    const centerX = LOGICAL_WIDTH / 2;
-    const centerY = LOGICAL_HEIGHT/ 2;
-    
-    // Битки
-    const strikerColor = player === 1 ? 'red' : 'blue';
-    const strikerX = player === 1 ? centerX - 200 : centerX + 200;
-    
-    stones.push(new Stone(strikerX, centerY - 50, STONE_RADIUS, strikerColor));
-    stones.push(new Stone(strikerX, centerY + 50, STONE_RADIUS, strikerColor));
-    
-    // Ворота (камни противника)
-    const gateColor = player === 1 ? 'blue' : 'red';
-    const gateX = player === 1 ? centerX + 100 : centerX - 100;
-    
-    stones.push(new Stone(gateX, centerY, STONE_RADIUS, gateColor));
+    const centerY = LOGICAL_HEIGHT / 2;
+    const baseX = player === 1 ? 180 : LOGICAL_WIDTH - 180;
+    const direction = player === 1 ? 1 : -1;
+    const groupOffsetY = (Math.random() - 0.5) * 80;
+    const dist1 = 90 + Math.random() * 30;
+    const dist2 = 90 + Math.random() * 30;
+
+    const x0 = baseX;
+    const y0 = centerY + groupOffsetY;
+    const x1 = baseX + 55 * direction;
+    const y1 = centerY - dist1 + groupOffsetY;
+    const x2 = baseX + 55 * direction;
+    const y2 = centerY + dist2 + groupOffsetY;
+
+    // Все 3 камня равнозначны, задаем нейтральный цвет
+    const stoneColor = 'white';
+
+    stones.push(new Stone(x0, y0, STONE_RADIUS, stoneColor));
+    stones.push(new Stone(x1, y1, STONE_RADIUS, stoneColor));
+    stones.push(new Stone(x2, y2, STONE_RADIUS, stoneColor));
 }
 
 // ============================================================
 // ИНИЦИАЛИЗАЦИЯ ПАНЕЛИ НАСТРОЕК
 // ============================================================
 
-/**
- * Инициализирует панель настроек
- */
 export function initSettingsPanel(): void {
     const settingsBtn = document.getElementById('settingsBtn');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
@@ -349,109 +350,117 @@ export function initSettingsPanel(): void {
     
     if (!settingsBtn || !closeSettingsBtn || !settingsPanel) return;
     
-    // Открытие/закрытие панели
-    settingsBtn.addEventListener('click', () => {
-        settingsPanel.classList.toggle('hidden');
-    });
+    settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('hidden'));
+    closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('hidden'));
     
-    closeSettingsBtn.addEventListener('click', () => {
-        settingsPanel.classList.add('hidden');
-    });
-    
-    // Максимальная сила
+    // 1. Максимальная сила
     const maxForceSlider = document.getElementById('maxForceSlider') as HTMLInputElement;
     const maxForceValue = document.getElementById('maxForceValue');
-    
     if (maxForceSlider && maxForceValue) {
         maxForceSlider.value = MAX_FORCE.toString();
         maxForceValue.textContent = MAX_FORCE.toString();
-        
         maxForceSlider.addEventListener('input', () => {
-            const value = parseFloat(maxForceSlider.value);
-            setMaxForce(value);
-            maxForceValue.textContent = value.toString();
+            const val = parseFloat(maxForceSlider.value);
+            setMaxForce(val);
+            maxForceValue.textContent = val.toString();
             saveSettingsToCookie();
         });
     }
     
-    // Трение
+    // 2. Трение
     const frictionSlider = document.getElementById('frictionSlider') as HTMLInputElement;
     const frictionValue = document.getElementById('frictionValue');
-    
     if (frictionSlider && frictionValue) {
         frictionSlider.value = FRICTION.toString();
         frictionValue.textContent = FRICTION.toFixed(2);
-        
         frictionSlider.addEventListener('input', () => {
-            const value = parseFloat(frictionSlider.value);
-            setFriction(value);
-            frictionValue.textContent = value.toFixed(2);
+            const val = parseFloat(frictionSlider.value);
+            setFriction(val);
+            frictionValue.textContent = val.toFixed(2);
             saveSettingsToCookie();
         });
     }
     
-    // Точность
+    // 3. Точность
     const accuracyToggle = document.getElementById('accuracyToggle') as HTMLInputElement;
-    
     if (accuracyToggle) {
         accuracyToggle.checked = accuracyEnabled;
-        
         accuracyToggle.addEventListener('change', () => {
             setAccuracyEnabled(accuracyToggle.checked);
             saveSettingsToCookie();
         });
     }
     
-    // Разброс
+    // 4. Разброс
     const spreadSlider = document.getElementById('spreadSlider') as HTMLInputElement;
     const spreadValue = document.getElementById('spreadValue');
-    
     if (spreadSlider && spreadValue) {
         spreadSlider.value = spreadFactor.toString();
         spreadValue.textContent = spreadFactor.toFixed(2);
-        
         spreadSlider.addEventListener('input', () => {
-            const value = parseFloat(spreadSlider.value);
-            spreadFactor = value;
-            spreadValue.textContent = value.toFixed(2);
+            spreadFactor = parseFloat(spreadSlider.value);
+            spreadValue.textContent = spreadFactor.toFixed(2);
             saveSettingsToCookie();
         });
     }
     
-    // Время мысли AI
+    // 5. Время мысли ИИ
     const aiThinkingSlider = document.getElementById('aiThinkingSlider') as HTMLInputElement;
     const aiThinkingValue = document.getElementById('aiThinkingValue');
-    
     if (aiThinkingSlider && aiThinkingValue) {
         aiThinkingSlider.value = aiThinkingTime.toString();
         aiThinkingValue.textContent = aiThinkingTime.toString();
-        
         aiThinkingSlider.addEventListener('input', () => {
-            const value = parseInt(aiThinkingSlider.value);
-            aiThinkingTime = value;
-            aiThinkingValue.textContent = value.toString();
+            aiThinkingTime = parseInt(aiThinkingSlider.value);
+            aiThinkingValue.textContent = aiThinkingTime.toString();
             saveSettingsToCookie();
         });
     }
     
-    // Чередование битков
+    // 6. Чередование
     const alternateStrikerToggle = document.getElementById('alternateStrikerToggle') as HTMLInputElement;
-    
     if (alternateStrikerToggle) {
         alternateStrikerToggle.checked = alternateStriker;
-        
         alternateStrikerToggle.addEventListener('change', () => {
             alternateStriker = alternateStrikerToggle.checked;
             saveSettingsToCookie();
         });
     }
+
+    // 7. Штрафы ИИ (мгновенное применение)
+    const riskSlider = document.getElementById('riskPenaltySlider') as HTMLInputElement;
+    const riskValue = document.getElementById('riskPenaltyValue');
+    if (riskSlider && riskValue) {
+        riskSlider.addEventListener('input', () => {
+            const val = parseInt(riskSlider.value);
+            riskValue.textContent = val.toString();
+            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ riskPenalty: val }));
+        });
+    }
+
+    const forceSlider = document.getElementById('forcePenaltySlider') as HTMLInputElement;
+    const forceValue = document.getElementById('forcePenaltyValue');
+    if (forceSlider && forceValue) {
+        forceSlider.addEventListener('input', () => {
+            const val = parseInt(forceSlider.value);
+            forceValue.textContent = val.toString();
+            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ forcePenalty: val }));
+        });
+    }
+
+    const gatesSlider = document.getElementById('gatesBlockPenaltySlider') as HTMLInputElement;
+    const gatesValue = document.getElementById('gatesBlockPenaltyValue');
+    if (gatesSlider && gatesValue) {
+        gatesSlider.addEventListener('input', () => {
+            const val = parseInt(gatesSlider.value);
+            gatesValue.textContent = val.toString();
+            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ gatesBlockPenalty: val }));
+        });
+    }
     
-    // Штрафы AI
-    initAIPenaltiesSliders();
-    
-    // Инициализируем максимальное расстояние
     updateMaxDistance();
 }
+    
 
 /**
  * Инициализирует слайдеры штрафов AI

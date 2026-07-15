@@ -82,26 +82,28 @@ export function moveAim(e: MouseEvent | TouchEvent): void {
 export function endAim(): void {
     if (!GameState.isAiming || !GameState.selectedStone) return;
     
+    const stone = GameState.selectedStone;
+    const dx = stone.x - GameState.mouseX;
+    const dy = stone.y - GameState.mouseY;
+    const distance = Math.hypot(dx, dy);
+
+    // ПРАВИЛО: Если отпустили внутри радиуса камня — отменяем прицеливание
+    if (distance < stone.radius) {
+        GameState.isAiming = false;
+        GameState.selectedStone = null;
+        return; // Удар не наносится, можно выбрать другой камень
+    }
+    
     GameState.isAiming = false;
     GameState.hasPassedThrough = false;
     GameState.hitObstacle = false;
     GameState.isGoalScored = false;
     GameState.turnResultText = "";
 
-    const stone = GameState.selectedStone;
     stone.startX = stone.x;
     stone.startY = stone.y;
     GameState.lastStruckStone = stone;
 
-    let dx = stone.x - GameState.mouseX;
-    let dy = stone.y - GameState.mouseY;
-    
-    const distance = Math.hypot(dx, dy);
-    if (distance === 0) {
-        GameState.selectedStone = null;
-        return;
-    }
-    
     const maxPullDistance = MAX_FORCE / FORCE_FACTOR;
     const pullDistance = Math.min(distance, maxPullDistance);
     
@@ -114,12 +116,11 @@ export function endAim(): void {
 
     const baseAngle = Math.atan2(tvy, tvx);
     
-    // Разброс (только если включена точность)
-    const spreadValue = accuracyEnabled ? spreadFactor : 0;
+    // ЛОГИКА ТОЧНОСТИ: если включена, разброс = 0
+    const spreadValue = accuracyEnabled ? 0 : spreadFactor;
     const spread = (force / MAX_FORCE) ** 2 * spreadValue;
     const finalAngle = GameMath.randomGaussian(baseAngle, spread);
 
-    // Запускаем симуляцию для игрока
     const stoneIndex = stones.indexOf(stone);
     const move: ShotData = {
         strikerIndex: stoneIndex,
@@ -129,6 +130,5 @@ export function endAim(): void {
     };
     
     simulationController.startSimulation(stones, move);
-    
     GameState.selectedStone = null;
 }
