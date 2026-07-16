@@ -103,9 +103,10 @@ export function processTurnResult(): void {
     // === УПРАВЛЕНИЕ ПРАВИЛОМ "ЧЕРЕДОВАНИЕ БИТКОВ" ===
     if (nextPlayer !== currentPlayer) {
         GameState.lastUsedStriker = null;
-    } else {
-        GameState.lastUsedStriker = GameState.lastStruckStone;
-    }
+    } 
+	//else {
+    //    GameState.lastUsedStriker = GameState.lastStruckStone;
+    //}
     
     // Обновляем состояние
     GameState.currentPlayer = nextPlayer;

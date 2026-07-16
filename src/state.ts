@@ -10,152 +10,73 @@ import { Stone } from "./stone.js";
 // ЛОГИЧЕСКИЕ РАЗМЕРЫ ПОЛЯ (для физики)
 // ============================================================
 
-/**
- * Логическая ширина поля (в игровых единицах)
- */
 export const LOGICAL_WIDTH = 1200;
-
-/**
- * Логическая высота поля (в игровых единицах)
- */
 export const LOGICAL_HEIGHT = 800;
 
-/**
- * Canvas и контекст
- */
 export const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 export const ctx = canvas.getContext('2d')!;
 
-// Устанавливаем фиксированный размер canvas = логический размер
 canvas.width = LOGICAL_WIDTH;
 canvas.height = LOGICAL_HEIGHT;
 
 // ============================================================
 // КОНСТАНТЫ ПОЛЯ (в логических координатах)
 // ============================================================
-export const GOAL_HEIGHT = 200;
-export const GOAL_Y = (LOGICAL_HEIGHT - GOAL_HEIGHT)/2;
-export const GOAL_WIDTH = 40;
 
-/**
- * Радиус камня
- */
+export const GOAL_HEIGHT = 200;
+export const GOAL_Y = (LOGICAL_HEIGHT - GOAL_HEIGHT) / 2;
+export const GOAL_WIDTH = 40;
 export const STONE_RADIUS = 28;
 
 // ============================================================
 // НАСТРАИВАЕМЫЕ ПАРАМЕТРЫ
 // ============================================================
 
-/**
- * Максимальная сила удара
- */
-export let MAX_FORCE = 18;
-
-/**
- * Коэффициент трения (0.90 - сильное трение, 0.99 - слабое трение)
- */
-export let FRICTION = 0.98;
-
-/**
- * Включена ли точность удара (разброс)
- */
+export let MAX_FORCE = 30;
+export let FRICTION = 0.95;
 export let accuracyEnabled = true;
-
-/**
- * Коэффициент разброса (случайное отклонение угла)
- */
 export let spreadFactor = 0.1;
-
-/**
- * Время "раздумья" AI в кадрах
- */
 export let aiThinkingTime = 60;
-
-/**
- * Включено ли чередование битков
- */
 export let alternateStriker = false;
 
-/**
- * Множитель силы удара
- */
+// НОВЫЕ ПАРАМЕТРЫ ДЛЯ ДИСКРЕТИЗАЦИИ И ПОРОГА УВЕРЕННОСТИ
+export let forceSteps = 6;          // Количество дискретов силы удара (3-10)
+export let angleSteps = 5;          // Количество дискретов направления удара (3-10)
+export let goalConfidenceThreshold = 0.5;  // Порог уверенности для гола (0-1)
+
 export const FORCE_FACTOR = 0.04;
-
-/**
- * Порог остановки (доля радиуса)
- */
 export const STOP_THRESHOLD_RATIO = 0.02;
-
-// ============================================================
-// ПАРАМЕТРЫ ОЦЕНКИ AI
-// ============================================================
-
-/**
- * Бонус за продвижение к воротам
- */
-export let advancementBonusFactor = 3000;
-
-/**
- * Штраф за отступление от ворот
- */
-export let retreatPenaltyFactor = 0.5;
-
-/**
- * Штраф за отсутствие валидных проходов
- */
-export let noValidPassesPenalty = 5000;
-
-/**
- * Бонус за острый угол треугольника (хорошая позиция для гола)
- */
-export let triangleAcuteBonus = 2000;
-
-/**
- * Штраф за тупой угол треугольника (плохая позиция)
- */
-export let triangleObtusePenalty = 1000;
-
-/**
- * Бонус за возможность следующего удара на гол
- */
-export let nextShotBonus = 5000;
-
-/**
- * Бонус за тактическую позицию для следующего хода
- */
-export let nextTacticalBonus = 2000;
 
 // ============================================================
 // ФУНКЦИИ ДЛЯ ИЗМЕНЕНИЯ НАСТРОЕК
 // ============================================================
 
-/**
- * Устанавливает максимальную силу удара
- */
 export function setMaxForce(value: number): void {
     MAX_FORCE = value;
     updateMaxDistance();
 }
 
-/**
- * Устанавливает коэффициент трения
- */
 export function setFriction(value: number): void {
     FRICTION = value;
     updateMaxDistance();
 }
 
-/**
- * Устанавливает включение точности удара
- */
 export function setAccuracyEnabled(value: boolean): void {
     accuracyEnabled = value;
 }
 
-/**
- * Вычисляет максимальное расстояние движения камня
- * Формула: distance = force / K, где K = -ln(friction)
- */
+export function setForceSteps(value: number): void {
+    forceSteps = Math.max(3, Math.min(10, Math.round(value)));
+}
+
+export function setAngleSteps(value: number): void {
+    angleSteps = Math.max(3, Math.min(10, Math.round(value)));
+}
+
+export function setGoalConfidenceThreshold(value: number): void {
+    goalConfidenceThreshold = Math.max(0, Math.min(1, value));
+}
+
 export function calculateMaxDistance(): number {
     if (FRICTION <= 0 || FRICTION >= 1) return 0;
     const K = -Math.log(FRICTION);
@@ -163,9 +84,6 @@ export function calculateMaxDistance(): number {
     return MAX_FORCE / K;
 }
 
-/**
- * Обновляет отображение максимального расстояния в панели настроек
- */
 function updateMaxDistance(): void {
     const maxDistanceValue = document.getElementById('maxDistanceValue');
     if (maxDistanceValue) {
@@ -197,6 +115,8 @@ export interface GameStateType {
     aiSelectedStone: Stone | null;
     aiAimTarget: { x: number; y: number } | null;
     aiConsideredMoves: any[];
+    aiCalculationTime: number;      // НОВОЕ: время расчёта AI в мс
+    renderTimeAvg: number;          // НОВОЕ: среднее время рендеринга в мс
 }
 
 export const GameState: GameStateType = {
@@ -217,7 +137,9 @@ export const GameState: GameStateType = {
     aiThinkingTimer: 0,
     aiSelectedStone: null,
     aiAimTarget: null,
-    aiConsideredMoves: []
+    aiConsideredMoves: [],
+    aiCalculationTime: 0,
+    renderTimeAvg: 0
 };
 
 export const stones: Stone[] = [];
@@ -278,14 +200,24 @@ export function initCookieBanner(): void {
 export function saveSettingsToCookie(): void {
     if (!cookiesAccepted) return;
     
-    const settings = {
+    const settings: any = {
         maxForce: MAX_FORCE,
         friction: FRICTION,
         accuracyEnabled,
         spreadFactor,
         aiThinkingTime,
-        alternateStriker
+        alternateStriker,
+        forceSteps,
+        angleSteps,
+        goalConfidenceThreshold
     };
+    
+    try {
+        const strategyModule = (window as any).__strategyModule;
+        if (strategyModule) {
+            settings.aiPenalties = strategyModule.getAIPenalties();
+        }
+    } catch (e) {}
     
     localStorage.setItem('gameSettings', JSON.stringify(settings));
 }
@@ -305,8 +237,26 @@ export function loadSettingsFromCookie(): void {
         if (settings.spreadFactor !== undefined) spreadFactor = settings.spreadFactor;
         if (settings.aiThinkingTime !== undefined) aiThinkingTime = settings.aiThinkingTime;
         if (settings.alternateStriker !== undefined) alternateStriker = settings.alternateStriker;
+        if (settings.forceSteps !== undefined) setForceSteps(settings.forceSteps);
+        if (settings.angleSteps !== undefined) setAngleSteps(settings.angleSteps);
+        if (settings.goalConfidenceThreshold !== undefined) setGoalConfidenceThreshold(settings.goalConfidenceThreshold);
+        
+        if (settings.aiPenalties) {
+            (window as any).__savedAIPenalties = settings.aiPenalties;
+        }
     } catch (e) {
         console.error('Ошибка загрузки настроек:', e);
+    }
+}
+
+export function applySavedAIPenalties(): void {
+    const savedPenalties = (window as any).__savedAIPenalties;
+    if (savedPenalties) {
+        import('./ai/strategy.js').then(mod => {
+            mod.setAIPenalties(savedPenalties);
+        }).catch(e => {
+            console.warn('Не удалось применить сохранённые штрафы ИИ:', e);
+        });
     }
 }
 
@@ -331,9 +281,7 @@ export function spawnAtGates(player: number): void {
     const x2 = baseX + 55 * direction;
     const y2 = centerY + dist2 + groupOffsetY;
 
-    // Все 3 камня равнозначны, задаем нейтральный цвет
     const stoneColor = 'white';
-
     stones.push(new Stone(x0, y0, STONE_RADIUS, stoneColor));
     stones.push(new Stone(x1, y1, STONE_RADIUS, stoneColor));
     stones.push(new Stone(x2, y2, STONE_RADIUS, stoneColor));
@@ -342,6 +290,44 @@ export function spawnAtGates(player: number): void {
 // ============================================================
 // ИНИЦИАЛИЗАЦИЯ ПАНЕЛИ НАСТРОЕК
 // ============================================================
+
+function bindSlider(
+    sliderId: string,
+    valueId: string,
+    initialValue: number,
+    onChange: (value: number) => void,
+    format: (value: number) => string = (v) => v.toString()
+): void {
+    const slider = document.getElementById(sliderId) as HTMLInputElement;
+    const valueSpan = document.getElementById(valueId);
+    
+    if (!slider || !valueSpan) return;
+    
+    slider.value = initialValue.toString();
+    valueSpan.textContent = format(initialValue);
+    
+    slider.addEventListener('input', () => {
+        const value = parseFloat(slider.value);
+        onChange(value);
+        valueSpan.textContent = format(value);
+        saveSettingsToCookie();
+    });
+}
+
+function bindCheckbox(
+    checkboxId: string,
+    initialValue: boolean,
+    onChange: (value: boolean) => void
+): void {
+    const checkbox = document.getElementById(checkboxId) as HTMLInputElement;
+    if (!checkbox) return;
+    
+    checkbox.checked = initialValue;
+    checkbox.addEventListener('change', () => {
+        onChange(checkbox.checked);
+        saveSettingsToCookie();
+    });
+}
 
 export function initSettingsPanel(): void {
     const settingsBtn = document.getElementById('settingsBtn');
@@ -353,119 +339,60 @@ export function initSettingsPanel(): void {
     settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('hidden'));
     closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('hidden'));
     
-    // 1. Максимальная сила
-    const maxForceSlider = document.getElementById('maxForceSlider') as HTMLInputElement;
-    const maxForceValue = document.getElementById('maxForceValue');
-    if (maxForceSlider && maxForceValue) {
-        maxForceSlider.value = MAX_FORCE.toString();
-        maxForceValue.textContent = MAX_FORCE.toString();
-        maxForceSlider.addEventListener('input', () => {
-            const val = parseFloat(maxForceSlider.value);
-            setMaxForce(val);
-            maxForceValue.textContent = val.toString();
-            saveSettingsToCookie();
-        });
-    }
+    // === ФИЗИКА ===
+    bindSlider('maxForceSlider', 'maxForceValue', MAX_FORCE, setMaxForce);
+    bindSlider('frictionSlider', 'frictionValue', FRICTION, setFriction, (v) => v.toFixed(2));
+    bindCheckbox('accuracyToggle', accuracyEnabled, setAccuracyEnabled);
     
-    // 2. Трение
-    const frictionSlider = document.getElementById('frictionSlider') as HTMLInputElement;
-    const frictionValue = document.getElementById('frictionValue');
-    if (frictionSlider && frictionValue) {
-        frictionSlider.value = FRICTION.toString();
-        frictionValue.textContent = FRICTION.toFixed(2);
-        frictionSlider.addEventListener('input', () => {
-            const val = parseFloat(frictionSlider.value);
-            setFriction(val);
-            frictionValue.textContent = val.toFixed(2);
-            saveSettingsToCookie();
-        });
-    }
+    // === РАЗБРОС ===
+    bindSlider('spreadSlider', 'spreadValue', spreadFactor, (v) => { spreadFactor = v; }, (v) => v.toFixed(2));
     
-    // 3. Точность
-    const accuracyToggle = document.getElementById('accuracyToggle') as HTMLInputElement;
-    if (accuracyToggle) {
-        accuracyToggle.checked = accuracyEnabled;
-        accuracyToggle.addEventListener('change', () => {
-            setAccuracyEnabled(accuracyToggle.checked);
-            saveSettingsToCookie();
-        });
-    }
+    // === ИИ ===
+    bindSlider('aiThinkingSlider', 'aiThinkingValue', aiThinkingTime, (v) => { aiThinkingTime = v; });
+    bindCheckbox('alternateStrikerToggle', alternateStriker, (v) => { alternateStriker = v; });
     
-    // 4. Разброс
-    const spreadSlider = document.getElementById('spreadSlider') as HTMLInputElement;
-    const spreadValue = document.getElementById('spreadValue');
-    if (spreadSlider && spreadValue) {
-        spreadSlider.value = spreadFactor.toString();
-        spreadValue.textContent = spreadFactor.toFixed(2);
-        spreadSlider.addEventListener('input', () => {
-            spreadFactor = parseFloat(spreadSlider.value);
-            spreadValue.textContent = spreadFactor.toFixed(2);
-            saveSettingsToCookie();
-        });
-    }
+    // === ДИСКРЕТИЗАЦИЯ ===
+    bindSlider('forceStepsSlider', 'forceStepsValue', forceSteps, setForceSteps);
+    bindSlider('angleStepsSlider', 'angleStepsValue', angleSteps, setAngleSteps);
     
-    // 5. Время мысли ИИ
-    const aiThinkingSlider = document.getElementById('aiThinkingSlider') as HTMLInputElement;
-    const aiThinkingValue = document.getElementById('aiThinkingValue');
-    if (aiThinkingSlider && aiThinkingValue) {
-        aiThinkingSlider.value = aiThinkingTime.toString();
-        aiThinkingValue.textContent = aiThinkingTime.toString();
-        aiThinkingSlider.addEventListener('input', () => {
-            aiThinkingTime = parseInt(aiThinkingSlider.value);
-            aiThinkingValue.textContent = aiThinkingTime.toString();
-            saveSettingsToCookie();
-        });
-    }
+    // === ПОРОГ УВЕРЕННОСТИ ===
+    bindSlider('confidenceSlider', 'confidenceValue', goalConfidenceThreshold, 
+        setGoalConfidenceThreshold, (v) => v.toFixed(2));
     
-    // 6. Чередование
-    const alternateStrikerToggle = document.getElementById('alternateStrikerToggle') as HTMLInputElement;
-    if (alternateStrikerToggle) {
-        alternateStrikerToggle.checked = alternateStriker;
-        alternateStrikerToggle.addEventListener('change', () => {
-            alternateStriker = alternateStrikerToggle.checked;
-            saveSettingsToCookie();
-        });
-    }
-
-    // 7. Штрафы ИИ (мгновенное применение)
-    const riskSlider = document.getElementById('riskPenaltySlider') as HTMLInputElement;
-    const riskValue = document.getElementById('riskPenaltyValue');
-    if (riskSlider && riskValue) {
-        riskSlider.addEventListener('input', () => {
-            const val = parseInt(riskSlider.value);
-            riskValue.textContent = val.toString();
-            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ riskPenalty: val }));
-        });
-    }
-
-    const forceSlider = document.getElementById('forcePenaltySlider') as HTMLInputElement;
-    const forceValue = document.getElementById('forcePenaltyValue');
-    if (forceSlider && forceValue) {
-        forceSlider.addEventListener('input', () => {
-            const val = parseInt(forceSlider.value);
-            forceValue.textContent = val.toString();
-            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ forcePenalty: val }));
-        });
-    }
-
-    const gatesSlider = document.getElementById('gatesBlockPenaltySlider') as HTMLInputElement;
-    const gatesValue = document.getElementById('gatesBlockPenaltyValue');
-    if (gatesSlider && gatesValue) {
-        gatesSlider.addEventListener('input', () => {
-            const val = parseInt(gatesSlider.value);
-            gatesValue.textContent = val.toString();
-            import('./ai/strategy.js').then(mod => mod.setAIPenalties({ gatesBlockPenalty: val }));
-        });
-    }
+    // === ШТРАФЫ ИИ ===
+    initAIPenaltiesSliders();
     
     updateMaxDistance();
 }
-    
 
-/**
- * Инициализирует слайдеры штрафов AI
- */
 export function initAIPenaltiesSliders(): void {
-    // Здесь можно добавить инициализацию слайдеров штрафов AI
-    // Если они используются в ai/strategy.ts
+    import('./ai/strategy.js').then(mod => {
+        const penalties = mod.getAIPenalties();
+        
+        bindSlider('riskPenaltySlider', 'riskPenaltyValue', penalties.riskPenalty, 
+            (v) => mod.setAIPenalties({ riskPenalty: v }));
+        
+        bindSlider('forcePenaltySlider', 'forcePenaltyValue', penalties.forcePenalty, 
+            (v) => mod.setAIPenalties({ forcePenalty: v }));
+        
+        bindSlider('gatesBlockPenaltySlider', 'gatesBlockPenaltyValue', penalties.gatesBlockPenalty, 
+            (v) => mod.setAIPenalties({ gatesBlockPenalty: v }));
+        
+        bindSlider('missGatePenaltySlider', 'missGatePenaltyValue', penalties.missGatePenalty, 
+            (v) => mod.setAIPenalties({ missGatePenalty: v }));
+        
+        bindSlider('advancementBonusSlider', 'advancementBonusValue', penalties.advancementBonus, 
+            (v) => mod.setAIPenalties({ advancementBonus: v }));
+        
+        bindSlider('retreatPenaltySlider', 'retreatPenaltyValue', penalties.retreatPenalty, 
+            (v) => mod.setAIPenalties({ retreatPenalty: v }), (v) => v.toFixed(1));
+        
+        bindSlider('nextShotBonusSlider', 'nextShotBonusValue', penalties.nextShotBonus, 
+            (v) => mod.setAIPenalties({ nextShotBonus: v }));
+        
+        bindSlider('badPositionPenaltySlider', 'badPositionPenaltyValue', penalties.badPositionPenalty, 
+            (v) => mod.setAIPenalties({ badPositionPenalty: v }));
+    }).catch(e => {
+        console.warn('Не удалось инициализировать слайдеры штрафов ИИ:', e);
+    });
 }

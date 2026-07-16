@@ -2,19 +2,25 @@
  * src/simulation/math.ts
  * 
  * Аналитические функции для расчёта времени событий.
+ * K вычисляется каждый раз для учёта изменения FRICTION.
  */
 
 import { StoneState, Point, CandidateEvent } from "./types.js";
-import { FRICTION, STOP_THRESHOLD_RATIO, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, canvas } from "../state.js";
-import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from "../state.js";
+import { FRICTION, STOP_THRESHOLD_RATIO, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, canvas, LOGICAL_WIDTH, LOGICAL_HEIGHT, STONE_RADIUS } from "../state.js";
 
-// Коэффициент затухания
-const K = -Math.log(FRICTION);
+/**
+ * Возвращает текущий коэффициент затухания.
+ * Вычисляется каждый раз, чтобы учитывать изменение FRICTION.
+ */
+function getK(): number {
+    return -Math.log(FRICTION);
+}
 
 /**
  * Вычисляет скорость камня в момент времени t
  */
 export function velocityAtTime(v0: number, t: number): number {
+    const K = getK();
     return v0 * Math.exp(-K * t);
 }
 
@@ -22,18 +28,20 @@ export function velocityAtTime(v0: number, t: number): number {
  * Вычисляет позицию камня в момент времени t
  */
 export function positionAtTime(x0: number, v0: number, t: number): number {
+    const K = getK();
     return x0 + (v0 / K) * (1 - Math.exp(-K * t));
 }
 
 /**
  * Вычисляет время полной остановки камня
  */
-export function stopTime(v0x: number, v0y: number): number {
+export function stopTime(v0x: number, v0y: number, radius: number = STONE_RADIUS): number {
+    const K = getK();
     const speed = Math.hypot(v0x, v0y);
     
     if (speed < 0.01) return 0;
     
-    const threshold = STOP_THRESHOLD_RATIO * 28;
+    const threshold = STOP_THRESHOLD_RATIO * radius;
     
     if (threshold >= speed) {
         return 0;
@@ -51,9 +59,47 @@ export function stopTime(v0x: number, v0y: number): number {
 }
 
 /**
+ * Вычисляет расстояние, которое пролетит камень до остановки
+ */
+export function stopDistance(v0x: number, v0y: number, radius: number = STONE_RADIUS): number {
+    const K = getK();
+    const speed = Math.hypot(v0x, v0y);
+    if (speed < 0.01) return 0;
+    
+    const threshold = STOP_THRESHOLD_RATIO * radius;
+    if (speed <= threshold) return 0;
+    
+    return (speed - threshold) / K;
+}
+
+/**
+ * Вычисляет точку, в которой остановится камень
+ */
+export function calculateStopPosition(
+    x0: number, 
+    y0: number, 
+    vx: number, 
+    vy: number,
+    radius: number = STONE_RADIUS
+): { x: number; y: number } {
+    const speed = Math.hypot(vx, vy);
+    if (speed < 0.01) {
+        return { x: x0, y: y0 };
+    }
+    
+    const tStop = stopTime(vx, vy, radius);
+    
+    return {
+        x: positionAtTime(x0, vx, tStop),
+        y: positionAtTime(y0, vy, tStop)
+    };
+}
+
+/**
  * Вычисляет время достижения точки на расстоянии d с учётом трения.
  */
 function timeToReachDistance(distance: number, speed: number): number | null {
+    const K = getK();
     if (speed < 0.001) return null;
     
     const maxDistance = speed / K;
@@ -197,6 +243,7 @@ export function calculateOutTime(stone: StoneState): { time: number; boundary: '
  * Решает уравнение x0 + (v0/K) * (1 - e^(-K*t)) = target для t
  */
 function solveForBoundary(x0: number, v0: number, target: number): number | null {
+    const K = getK();
     const arg = 1 - (target - x0) * K / v0;
     if (arg <= 0) return null;
     
@@ -276,7 +323,6 @@ export function checkGoal(
     const dir = { x: striker.vx / speed, y: striker.vy / speed };
     const startPos = { x: striker.x, y: striker.y };
     
-    // Проверка створа
     if (!skipGateCheck) {
         const others = allStones.filter(s => s.index !== striker.index && !s.isOut);
         
@@ -310,7 +356,6 @@ export function checkGoal(
         }
     }
     
-    // Проверка, не находится ли биток уже за линией ворот
     if (startPos.x > LOGICAL_WIDTH - GOAL_WIDTH && 
         startPos.y > GOAL_Y && 
         startPos.y < GOAL_Y + GOAL_HEIGHT) {
@@ -323,7 +368,6 @@ export function checkGoal(
         return { time: 0.1, goalSide: 'left' };
     }
     
-    // Правые ворота
     const rightGate1 = { x: LOGICAL_WIDTH - GOAL_WIDTH, y: GOAL_Y };
     const rightGate2 = { x: LOGICAL_WIDTH - GOAL_WIDTH, y: GOAL_Y + GOAL_HEIGHT };
     const rightIntersection = findGateIntersection(startPos, dir, rightGate1, rightGate2);
@@ -335,7 +379,6 @@ export function checkGoal(
         }
     }
     
-    // Левые ворота
     const leftGate1 = { x: GOAL_WIDTH, y: GOAL_Y };
     const leftGate2 = { x: GOAL_WIDTH, y: GOAL_Y + GOAL_HEIGHT };
     const leftIntersection = findGateIntersection(startPos, dir, leftGate1, leftGate2);

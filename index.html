@@ -26,76 +26,129 @@
             <!-- Раздел: Физика -->
             <div class="settings-section">
                 <h4>Физика</h4>
-                
-                <div class="setting-item">
-                    <label for="maxForceSlider">Макс. сила</label>
-                    <input type="range" id="maxForceSlider" min="20" max="60" value="30" step="1">
-                    <span id="maxForceValue">30</span>
-                </div>
-                
-                <div class="setting-item">
-                    <label for="frictionSlider">Трение</label>
-                    <input type="range" id="frictionSlider" min="0.80" max="0.99" value="0.95" step="0.01">
-                    <span id="frictionValue">0.95</span>
-                </div>
-                
-                <div class="setting-item info-item">
-                    <label>Макс. дистанция</label>
-                    <span id="maxDistanceValue" class="info-value">0</span>
-                </div>
-                
-                <div class="setting-item">
-                    <label for="accuracyToggle">Точность</label>
-                    <input type="checkbox" id="accuracyToggle" checked>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="maxForceSlider">Макс. сила</label>
+                        <input type="range" id="maxForceSlider" min="20" max="60" value="30" step="1">
+                        <span id="maxForceValue">30</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="frictionSlider">Трение</label>
+                        <input type="range" id="frictionSlider" min="0.80" max="0.99" value="0.95" step="0.01">
+                        <span id="frictionValue">0.95</span>
+                    </div>
+                    
+                    <div class="setting-item info-item">
+                        <label>Макс. дистанция</label>
+                        <span id="maxDistanceValue" class="info-value">0</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="accuracyToggle">Точность</label>
+                        <input type="checkbox" id="accuracyToggle" checked>
+                    </div>
                 </div>
             </div>
             
             <!-- Раздел: Разброс -->
             <div class="settings-section">
                 <h4>Разброс</h4>
-                <div class="setting-item">
-                    <label for="spreadSlider">Разброс</label>
-                    <input type="range" id="spreadSlider" min="0" max="0.5" value="0.1" step="0.01">
-                    <span id="spreadValue">0.10</span>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="spreadSlider">Разброс</label>
+                        <input type="range" id="spreadSlider" min="0" max="0.5" value="0.1" step="0.01">
+                        <span id="spreadValue">0.10</span>
+                    </div>
                 </div>
             </div>
             
             <!-- Раздел: ИИ -->
             <div class="settings-section">
                 <h4>ИИ</h4>
-                
-                <div class="setting-item">
-                    <label for="aiThinkingSlider">Время мысли</label>
-                    <input type="range" id="aiThinkingSlider" min="30" max="180" value="60" step="10">
-                    <span id="aiThinkingValue">60</span>
-                </div>
-                
-                <div class="setting-item">
-                    <label for="alternateStrikerToggle">Чередование</label>
-                    <input type="checkbox" id="alternateStrikerToggle">
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="aiThinkingSlider">Время мысли</label>
+                        <input type="range" id="aiThinkingSlider" min="30" max="180" value="60" step="10">
+                        <span id="aiThinkingValue">60</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="alternateStrikerToggle">Чередование</label>
+                        <input type="checkbox" id="alternateStrikerToggle">
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="forceStepsSlider">Сила (шаги)</label>
+                        <input type="range" id="forceStepsSlider" min="3" max="10" value="6" step="1">
+                        <span id="forceStepsValue">6</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="angleStepsSlider">Угол (шаги)</label>
+                        <input type="range" id="angleStepsSlider" min="3" max="10" value="5" step="1">
+                        <span id="angleStepsValue">5</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="confidenceSlider">Уверен. гола</label>
+                        <input type="range" id="confidenceSlider" min="0" max="1" value="0.5" step="0.05">
+                        <span id="confidenceValue">0.50</span>
+                    </div>
                 </div>
             </div>
             
-            <!-- Раздел: Штрафы ИИ -->
+            <!-- Раздел: Штрафы AI -->
             <div class="settings-section">
                 <h4>Штрафы ИИ</h4>
-                
-                <div class="setting-item">
-                    <label for="riskPenaltySlider">Риск</label>
-                    <input type="range" id="riskPenaltySlider" min="0" max="10000" value="4000" step="500">
-                    <span id="riskPenaltyValue">4000</span>
-                </div>
-                
-                <div class="setting-item">
-                    <label for="forcePenaltySlider">Сила</label>
-                    <input type="range" id="forcePenaltySlider" min="0" max="1000" value="300" step="50">
-                    <span id="forcePenaltyValue">300</span>
-                </div>
-                
-                <div class="setting-item">
-                    <label for="gatesBlockPenaltySlider">Створ</label>
-                    <input type="range" id="gatesBlockPenaltySlider" min="0" max="20000" value="10000" step="1000">
-                    <span id="gatesBlockPenaltyValue">10000</span>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="riskPenaltySlider">Риск</label>
+                        <input type="range" id="riskPenaltySlider" min="0" max="10000" value="4000" step="500">
+                        <span id="riskPenaltyValue">4000</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="forcePenaltySlider">Сила</label>
+                        <input type="range" id="forcePenaltySlider" min="0" max="1000" value="300" step="50">
+                        <span id="forcePenaltyValue">300</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="gatesBlockPenaltySlider">Створ</label>
+                        <input type="range" id="gatesBlockPenaltySlider" min="0" max="20000" value="10000" step="1000">
+                        <span id="gatesBlockPenaltyValue">10000</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="missGatePenaltySlider">Непроход</label>
+                        <input type="range" id="missGatePenaltySlider" min="0" max="10000" value="5000" step="500">
+                        <span id="missGatePenaltyValue">5000</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="advancementBonusSlider">Продвижение</label>
+                        <input type="range" id="advancementBonusSlider" min="0" max="10000" value="3000" step="500">
+                        <span id="advancementBonusValue">3000</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="retreatPenaltySlider">Откат</label>
+                        <input type="range" id="retreatPenaltySlider" min="0" max="5" value="0.5" step="0.1">
+                        <span id="retreatPenaltyValue">0.5</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="nextShotBonusSlider">След. гол</label>
+                        <input type="range" id="nextShotBonusSlider" min="0" max="10000" value="5000" step="500">
+                        <span id="nextShotBonusValue">5000</span>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="badPositionPenaltySlider">Позиция</label>
+                        <input type="range" id="badPositionPenaltySlider" min="0" max="5000" value="2000" step="500">
+                        <span id="badPositionPenaltyValue">2000</span>
+                    </div>
                 </div>
             </div>
         </div>

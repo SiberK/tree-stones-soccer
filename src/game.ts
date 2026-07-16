@@ -5,9 +5,9 @@
  */
 
 import { 
-    GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, LOGICAL_WIDTH, LOGICAL_HEIGHT, canvas, spawnAtGates, 
-    initSettingsPanel, loadSettingsFromCookie, checkCookieConsent, initCookieBanner,
-    aiThinkingTime, cookiesAccepted
+    GameState, stones, GOAL_Y, GOAL_HEIGHT, GOAL_WIDTH, LOGICAL_WIDTH, LOGICAL_HEIGHT,
+    canvas, spawnAtGates, initSettingsPanel, loadSettingsFromCookie, applySavedAIPenalties,
+    checkCookieConsent, initCookieBanner, aiThinkingTime, cookiesAccepted
 } from "./state.js";
 import { AI } from "./ai/index.js";
 import { startAim, moveAim, endAim } from "./input.js";
@@ -17,10 +17,6 @@ import { simulationController, EventOccurrence } from "./simulation/controller.j
 import { ShotData } from "./simulation/types.js";
 
 let pendingAIMove: any = null;
-
-// ============================================================
-// ОПТИМИЗАЦИЯ FPS
-// ============================================================
 
 const TARGET_FPS = 30;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
@@ -32,9 +28,6 @@ let lastScoreLeft = -1;
 let lastScoreRight = -1;
 let lastPlayer = -1;
 
-/**
- * Обрабатывает произошедшие события и добавляет визуальные эффекты
- */
 function handleOccurredEvents(events: EventOccurrence[]): void {
     for (const event of events) {
         switch (event.eventType) {
@@ -138,10 +131,18 @@ function processAITurn(): void {
             GameState.hitObstacle = false;
             GameState.isGoalScored = false;
             
+            // ИЗМЕРЕНИЕ ВРЕМЕНИ РАСЧЁТА
+            const startTime = performance.now();
             pendingAIMove = AI.calculateMove(stones);
+            const calculationTime = performance.now() - startTime;
+            GameState.aiCalculationTime = calculationTime;
+            
             if (pendingAIMove) {
                 GameState.aiSelectedStone = pendingAIMove.stone;
-                GameState.aiAimTarget = { x: pendingAIMove.targetX, y: pendingAIMove.targetY };
+                GameState.aiAimTarget = { 
+                    x: pendingAIMove.stopX !== undefined ? pendingAIMove.stopX : pendingAIMove.targetX, 
+                    y: pendingAIMove.stopY !== undefined ? pendingAIMove.stopY : pendingAIMove.targetY 
+                };
                 setPendingAIMove(pendingAIMove);
                 needsRedraw = true;
             }
@@ -159,8 +160,10 @@ function processAITurn(): void {
                 playerIndex: 2
             };
             
-            simulationController.startSimulation(stones, move);
+            GameState.lastUsedStriker = pendingAIMove.stone;
             GameState.lastStruckStone = pendingAIMove.stone;
+            
+            simulationController.startSimulation(stones, move);
             
             GameState.aiConsideredMoves = []; 
             pendingAIMove = null;
@@ -270,7 +273,15 @@ function gameLoop(currentTime: number = 0): void {
     processAITurn();
     
     if (needsRedraw) {
+        // ИЗМЕРЕНИЕ ВРЕМЕНИ РЕНДЕРИНГА
+        const renderStart = performance.now();
         render();
+        const renderTime = performance.now() - renderStart;
+        
+        // Усредняем только если биток движется
+        if (simulationController.isSimulating()) {
+            GameState.renderTimeAvg = GameState.renderTimeAvg * 0.9 + renderTime * 0.1;
+        }
     }
 }
 
@@ -312,7 +323,7 @@ if (cookiesAccepted) {
     loadSettingsFromCookie();
 }
 
-// Инициализация элементов управления
+applySavedAIPenalties();
 initSettingsPanel();
 initFullscreenButton();
 

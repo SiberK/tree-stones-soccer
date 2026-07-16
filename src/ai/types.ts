@@ -1,30 +1,41 @@
 /**
- * Типы и интерфейсы для модуля AI
+ * src/ai/types.ts
  */
 
 import { Stone } from "../stone.js";
-import { Point } from "../math.js";
 
 /**
- * Интерфейс описывает один рассчитанный вариант хода.
+ * Рассчитанный ход AI.
  */
 export interface AIMove {
-    stone: Stone;           // Какой камень будем бить (биток)
-    targetX: number;        // Целевая координата X
-    targetY: number;        // Целевая координата Y
-    score: number;          // Итоговая оценка полезности хода
-    force: number;          // Сила удара (0..MAX_FORCE)
-    isFinalShot: boolean;   // Это удар на гол?
-    risk: number;           // Риск фола (0..1)
-    type: 'GOAL' | 'PASS' | 'EMERGENCY'; // Тип хода
-    stopX?: number;         // Расчётная точка остановки
-    stopY?: number;         // Расчётная точка остановки
-    /** Флаг: вариант не проходит через ворота между камнями */
-    blockedByGates?: boolean;
+    stone: Stone;
+    targetX: number;
+    targetY: number;
+    score: number;
+    force: number;
+    isFinalShot: boolean;
+    risk: number;
+    type: 'GOAL' | 'PASS' | 'EMERGENCY';
+    stopX: number;
+    stopY: number;
+    blockedByGates: boolean;
+    
+    // === НОВЫЕ ПОЛЯ ДЛЯ ОТЛАДКИ ===
+    /** Точка пересечения луча с гейтом */
+    gateIntersectionX?: number;
+    gateIntersectionY?: number;
+    
+    /** Минимальная точка остановки (при forceMin) */
+    minStopX?: number;
+    minStopY?: number;
+    
+    /** Максимальная точка остановки (при forceMax) */
+    maxStopX?: number;
+    maxStopY?: number;
 }
 
 /**
- * Результат оценки варианта хода (для логирования и визуализации)
+ * Детальная оценка хода.
  */
 export interface MoveEvaluation {
     move: AIMove;
@@ -33,7 +44,6 @@ export interface MoveEvaluation {
     forcePenalty: number;
     totalScore: number;
     rejected: boolean;
-    rejectReason?: string;
-    /** Флаг: вариант не проходит через ворота между камнями */
+    rejectReason: string;
     blockedByGates: boolean;
 }
