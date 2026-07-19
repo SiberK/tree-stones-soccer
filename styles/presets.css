@@ -1,0 +1,57 @@
+/* ============================================================
+   ПАНЕЛЬ ПРЕСЕТОВ
+   Кнопки 1-6 для быстрой смены весов
+   ============================================================ */
+
+.presets-bar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 6px 12px;
+    border-radius: 8px;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.presets-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+.preset-btn {
+    width: 30px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preset-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: scale(1.08);
+}
+
+.preset-btn.active {
+    background: #4CAF50;
+    border-color: #45a049;
+    box-shadow: 0 0 12px rgba(76, 175, 80, 0.6);
+}
+
+.preset-btn.active:hover {
+    background: #45a049;
+}

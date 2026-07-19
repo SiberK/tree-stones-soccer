@@ -1,0 +1,58 @@
+/* ============================================================
+   АДАПТИВНОСТЬ
+   Медиа-запросы для мобильных устройств
+   ============================================================ */
+
+@media (max-width: 600px) {
+    .settings-panel {
+        width: calc(100vw - 20px);
+        right: 10px;
+        max-height: 90vh;
+    }
+    
+    .pause-panel {
+        width: calc(100vw - 20px);
+        left: 10px;
+    }
+    
+    .settings-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
+    .setting-item label {
+        flex: 0 0 100px;
+    }
+    
+    .presets-bar {
+        top: 60px;
+        flex-wrap: wrap;
+        max-width: calc(100vw - 130px);
+    }
+    
+    .controls {
+        top: 10px;
+        right: 10px;
+    }
+}
+
+@media (max-width: 400px) {
+    .setting-item {
+        flex-wrap: wrap;
+    }
+    
+    .setting-item label {
+        flex: 0 0 100%;
+        margin-bottom: 4px;
+    }
+    
+    .setting-item span {
+        flex: 0 0 100%;
+        text-align: left;
+        margin-top: 2px;
+    }
+    
+    .pause-buttons {
+        grid-template-columns: 1fr;
+    }
+}

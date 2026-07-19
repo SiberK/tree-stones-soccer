@@ -1,0 +1,11 @@
+/* ============================================================
+   ГЛАВНЫЙ CSS ФАЙЛ
+   Импорт всех модулей стилей
+   ============================================================ */
+
+@import url('base.css');
+@import url('controls.css');
+@import url('presets.css');
+@import url('pause.css');
+@import url('settings.css');
+@import url('responsive.css');

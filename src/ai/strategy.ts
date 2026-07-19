@@ -1,1018 +1,461 @@
 /**
  * src/ai/strategy.ts
  * 
- * Стратегическая оценка ходов для AI.
- * Все камни равнозначны: любой камень может быть битком, два других — ворота (гейт).
- * 
- * Алгоритм:
- * 1. Для каждого битка строим свободный коридор через касательные к буферным зонам.
- * 2. Оцениваем голевую возможность (только для левых ворот — ворота соперника).
- * 3. Дискретизируем углы и силы в диапазоне.
- * 4. Оцениваем качество позиции после удара (двухходовка).
- * 5. Выбираем лучший ход по комплексной оценке.
+ * Стратегия AI: генерация кандидатов, оценка ходов, выбор лучшего.
  */
 
 import { Stone } from "../stone.js";
-import {
-	LOGICAL_WIDTH,
-	LOGICAL_HEIGHT,
-	GOAL_Y,
-	GOAL_HEIGHT,
-	GOAL_WIDTH,
-	MAX_FORCE,
-	FRICTION,
-	STONE_RADIUS,
-	forceSteps,
-	angleSteps,
-	goalConfidenceThreshold,
-	accuracyEnabled,
-	spreadFactor
+import { 
+    LOGICAL_WIDTH, LOGICAL_HEIGHT, MAX_FORCE, FRICTION, 
+    STONE_RADIUS, goalConfidenceThreshold, currentWeights,
+    accuracyEnabled, spreadFactor // <-- ДОБАВЛЕНО для GoalParams
 } from "../state.js";
-import { Point } from "../math.js";
-import { calculateStopPosition } from "../simulation/math.js";
-import { AIMove, MoveEvaluation } from "./types.js";
+import { 
+    FreeCorridor, buildFreeCorridor , angleRangeWidth, rayToSegmentDistance, distanceToBoundary, isAngleInRange
+} from "./geometry.js";
+import { 
+    GoalEvaluation, evaluateGoalPossibility, isGoalShot 
+} from "./goal.js";
+import { 
+    calculateMetrics 
+} from "./metrics.js";
+import { 
+    calculateStopPosition 
+} from "../simulation/math.js";
+import { 
+    CachedCandidate, AIMove, Weights 
+} from "./types.js";
 
 // ============================================================
-// НАСТРОЙКИ ШТРАФОВ И БОНУСОВ ИИ
+// ПАРАМЕТРЫ ПЕРЕБОРА
 // ============================================================
 
-const DEFAULT_PENALTIES = {
-	riskPenalty: 4000,
-	forcePenalty: 300,
-	gatesBlockPenalty: 10000,
-	advancementBonus: 3000,
-	retreatPenalty: 0.5,
-	nextShotBonus: 5000,
-	missGatePenalty: 5000,
-	badPositionPenalty: 2000
-};
-
-let currentPenalties = { ...DEFAULT_PENALTIES };
-
-export function setAIPenalties(penalties: Partial<typeof DEFAULT_PENALTIES>): void {
-	currentPenalties = { ...currentPenalties, ...penalties };
-}
-
-export function getAIPenalties(): typeof DEFAULT_PENALTIES {
-	return { ...currentPenalties };
-}
-
-(window as any).__strategyModule = {
-	getAIPenalties,
-	setAIPenalties
-};
+const angleSteps = 6;
+const forceSteps = 6;
 
 // ============================================================
-// МАТЕМАТИКА СВОБОДНОГО КОРИДОРА
-// ============================================================
-
-interface FreeCorridor {
-	isValid: boolean;
-	alphaMin: number;
-	alphaMax: number;
-	alphaCenter: number;
-	margin: number;
-	rejectReason?: string;
-}
-
-function buildFreeCorridor(
-	striker: Stone,
-	gateA: Stone,
-	gateB: Stone
-): FreeCorridor {
-	const R = striker.radius;
-	const bufferRadius = 2.2 * R;  // Запас 0.2R для безопасности
-	const P = { x: striker.x, y: striker.y };
-	const A = { x: gateA.x, y: gateA.y };
-	const B = { x: gateB.x, y: gateB.y };
-
-	// Проверка вырожденного случая
-	const distPA = Math.hypot(P.x - A.x, P.y - A.y);
-	const distPB = Math.hypot(P.x - B.x, P.y - B.y);
-
-	if (distPA < bufferRadius || distPB < bufferRadius) {
-		return {
-			isValid: false,
-			alphaMin: 0,
-			alphaMax: 0,
-			alphaCenter: 0,
-			margin: 0,
-			rejectReason: 'Биток внутри буферной зоны'
-		};
-	}
-
-	const ABx = B.x - A.x;
-	const ABy = B.y - A.y;
-	const APx = P.x - A.x;
-	const APy = P.y - A.y;
-	const cross = ABx * APy - ABy * APx;
-	const dot = ABx * APx + ABy * APy;
-	const lenSq = ABx * ABx + ABy * ABy;
-
-	if (Math.abs(cross) < 1e-6 && dot >= 0 && dot <= lenSq) {
-		return {
-			isValid: false,
-			alphaMin: 0,
-			alphaMax: 0,
-			alphaCenter: 0,
-			margin: 0,
-			rejectReason: 'Биток на отрезке гейта'
-		};
-	}
-
-	// Построение касательных
-	const tangents: { angle: number; source: 'A' | 'B' }[] = [];
-
-	for (const [center, source] of [[A, 'A'], [B, 'B']] as const) {
-		const dx = center.x - P.x;
-		const dy = center.y - P.y;
-		const d = Math.hypot(dx, dy);
-
-		if (d < bufferRadius) {
-			return {
-				isValid: false,
-				alphaMin: 0,
-				alphaMax: 0,
-				alphaCenter: 0,
-				margin: 0,
-				rejectReason: 'Биток внутри буферной зоны'
-			};
-		}
-
-		const alphaC = Math.atan2(dy, dx);
-		const beta = Math.asin(bufferRadius / d);
-
-		tangents.push({ angle: normalizeAngle(alphaC - beta), source });
-		tangents.push({ angle: normalizeAngle(alphaC + beta), source });
-	}
-
-	// Выбор внутренних касательных
-	const internalTangents: { angle: number; source: 'A' | 'B' }[] = [];
-
-	for (const tangent of tangents) {
-		const dirX = Math.cos(tangent.angle);
-		const dirY = Math.sin(tangent.angle);
-
-		if (!rayIntersectsSegment(P, dirX, dirY, A, B)) {
-			continue;
-		}
-
-		const otherCenter = tangent.source === 'A' ? B : A;
-		const distToOther = distanceFromPointToRay(
-			otherCenter.x, otherCenter.y,
-			P.x, P.y, dirX, dirY
-		);
-
-		if (distToOther < bufferRadius - 1e-6) {
-			continue;
-		}
-
-		internalTangents.push(tangent);
-	}
-
-	if (internalTangents.length !== 2) {
-		return {
-			isValid: false,
-			alphaMin: 0,
-			alphaMax: 0,
-			alphaCenter: 0,
-			margin: 0,
-			rejectReason: `Не найдено 2 внутренних касательных (найдено ${internalTangents.length})`
-		};
-	}
-
-	// Биссектриса и нормализация
-	let angle1 = internalTangents[0].angle;
-	let angle2 = internalTangents[1].angle;
-
-	let delta = angle2 - angle1;
-	if (delta > Math.PI) {
-		angle1 += 2 * Math.PI;
-		delta = angle2 - angle1;
-	} else if (delta < -Math.PI) {
-		angle2 += 2 * Math.PI;
-		delta = angle2 - angle1;
-	}
-
-	if (delta < 0) {
-		[angle1, angle2] = [angle2, angle1];
-		delta = -delta;
-	}
-
-	const alphaCenter = normalizeAngle((angle1 + angle2) / 2);
-
-	// Проверка валидности центрального луча
-	const centerDirX = Math.cos(alphaCenter);
-	const centerDirY = Math.sin(alphaCenter);
-
-	if (!rayIntersectsSegment(P, centerDirX, centerDirY, A, B)) {
-		return {
-			isValid: false,
-			alphaMin: 0,
-			alphaMax: 0,
-			alphaCenter: 0,
-			margin: 0,
-			rejectReason: 'Центральный луч не пересекает гейт'
-		};
-	}
-
-	const distToA = distanceFromPointToRay(A.x, A.y, P.x, P.y, centerDirX, centerDirY);
-	const distToB = distanceFromPointToRay(B.x, B.y, P.x, P.y, centerDirX, centerDirY);
-
-	if (distToA < bufferRadius - 1e-6 || distToB < bufferRadius - 1e-6) {
-		return {
-			isValid: false,
-			alphaMin: 0,
-			alphaMax: 0,
-			alphaCenter: 0,
-			margin: 0,
-			rejectReason: 'Центральный луч пересекает буферную зону'
-		};
-	}
-
-	// Нормализация диапазона
-	const halfDelta1 = Math.abs(normalizeAngle(angle1 - alphaCenter));
-	const halfDelta2 = Math.abs(normalizeAngle(angle2 - alphaCenter));
-	const halfDelta = Math.min(halfDelta1, halfDelta2);
-
-	const alphaMin = normalizeAngle(alphaCenter - halfDelta);
-	const alphaMax = normalizeAngle(alphaCenter + halfDelta);
-
-	const margin = Math.min(distToA, distToB) - bufferRadius;
-
-	return {
-		isValid: true,
-		alphaMin,
-		alphaMax,
-		alphaCenter,
-		margin
-	};
-}
-
-function normalizeAngle(angle: number): number {
-	while (angle > Math.PI) angle -= 2 * Math.PI;
-	while (angle < -Math.PI) angle += 2 * Math.PI;
-	return angle;
-}
-
-function rayIntersectsSegment(
-	P: { x: number; y: number },
-	dirX: number,
-	dirY: number,
-	A: { x: number; y: number },
-	B: { x: number; y: number }
-): boolean {
-	const ABx = B.x - A.x;
-	const ABy = B.y - A.y;
-
-	const det = dirX * ABy - dirY * ABx;
-	if (Math.abs(det) < 1e-10) return false;
-
-	const dx = A.x - P.x;
-	const dy = A.y - P.y;
-
-	const t = (dx * ABy - dy * ABx) / det;
-	const s = (dx * dirY - dy * dirX) / det;
-
-	return t > 1e-6 && s >= -1e-6 && s <= 1 + 1e-6;
-}
-
-function distanceFromPointToRay(
-	qx: number, qy: number,
-	px: number, py: number,
-	dirX: number, dirY: number
-): number {
-	const dx = qx - px;
-	const dy = qy - py;
-
-	const t = dx * dirX + dy * dirY;
-	if (t < 0) return Infinity;
-
-	const cross = Math.abs(dx * dirY - dy * dirX);
-	return cross;
-}
-
-function isAngleInRange(angle: number, min: number, max: number): boolean {
-	const a = normalizeAngle(angle);
-	const lo = normalizeAngle(min);
-	const hi = normalizeAngle(max);
-
-	if (lo <= hi) {
-		return a >= lo && a <= hi;
-	} else {
-		return a >= lo || a <= hi;
-	}
-}
-
-function angleRangeWidth(min: number, max: number): number {
-	let delta = normalizeAngle(max - min);
-	if (delta < 0) delta += 2 * Math.PI;
-	return delta;
-}
-
-// ============================================================
-// ОЦЕНКА ГОЛЕВОЙ ВОЗМОЖНОСТИ
-// ============================================================
-
-interface GoalEvaluation {
-	isPossible: boolean;
-	confidence: number;
-	goalCorridorMin: number;
-	goalCorridorMax: number;
-	forceMin: number;
-	forceMax: number;
-	targetX: number;
-	targetY: number;
-}
-
-function evaluateGoalPossibility(
-	striker: Stone,
-	corridor: FreeCorridor
-): GoalEvaluation {
-	const P = { x: striker.x, y: striker.y };
-	const R = striker.radius;
-
-	const goalX = 0;
-	const goalTop = GOAL_Y;
-	const goalBottom = GOAL_Y + GOAL_HEIGHT;
-
-	const thetaTop = Math.atan2(goalTop - P.y, goalX - P.x);
-	const thetaBottom = Math.atan2(goalBottom - P.y, goalX - P.x);
-
-	let thetaMin = Math.min(thetaTop, thetaBottom);
-	let thetaMax = Math.max(thetaTop, thetaBottom);
-
-	let entry = Math.max(corridor.alphaMin, thetaMin);
-	let exit = Math.min(corridor.alphaMax, thetaMax);
-
-	const entryNorm = normalizeAngle(entry);
-	const exitNorm = normalizeAngle(exit);
-
-	let goalCorridorExists = false;
-	let goalCorridorMin = 0;
-	let goalCorridorMax = 0;
-
-	if (corridor.alphaMin <= corridor.alphaMax) {
-		if (entry <= exit) {
-			goalCorridorExists = true;
-			goalCorridorMin = entry;
-			goalCorridorMax = exit;
-		}
-	} else {
-		if (entry <= exit || entry <= corridor.alphaMax || exit >= corridor.alphaMin) {
-			goalCorridorExists = true;
-			goalCorridorMin = entry;
-			goalCorridorMax = exit;
-		}
-	}
-
-	if (!goalCorridorExists) {
-		return {
-			isPossible: false,
-			confidence: 0,
-			goalCorridorMin: 0,
-			goalCorridorMax: 0,
-			forceMin: 0,
-			forceMax: 0,
-			targetX: 0,
-			targetY: 0
-		};
-	}
-
-	const goalCorridorWidth = angleRangeWidth(goalCorridorMin, goalCorridorMax);
-
-	const clampedY = Math.max(goalTop, Math.min(goalBottom, P.y));
-	const dGate = Math.hypot(goalX - P.x, clampedY - P.y);
-
-	const targetX = -4 * R;
-	const targetY = clampedY;
-	const dTarget = Math.hypot(targetX - P.x, targetY - P.y);
-
-	const K = -Math.log(FRICTION);
-	const threshold = 0.02 * R;
-
-	const forceMin = dTarget * K + threshold;
-	const forceMax = MAX_FORCE;
-
-	if (forceMin > forceMax) {
-		return {
-			isPossible: false,
-			confidence: 0,
-			goalCorridorMin: 0,
-			goalCorridorMax: 0,
-			forceMin: 0,
-			forceMax: 0,
-			targetX: 0,
-			targetY: 0
-		};
-	}
-
-	let confidence = 1.0;
-
-	if (!accuracyEnabled) {
-		const avgForce = (forceMin + forceMax) / 2;
-		const spreadAtForce = Math.pow(avgForce / MAX_FORCE, 2) * spreadFactor;
-		const effectiveSpread = 2 * spreadAtForce;
-
-		if (goalCorridorWidth < effectiveSpread) {
-			confidence = 0;
-		} else {
-			confidence = (goalCorridorWidth - effectiveSpread) / goalCorridorWidth;
-		}
-	}
-
-	return {
-		isPossible: confidence > 0,
-		confidence,
-		goalCorridorMin,
-		goalCorridorMax,
-		forceMin,
-		forceMax,
-		targetX,
-		targetY
-	};
-}
-
-// ============================================================
-// ОЦЕНКА ХОДА С УЧЁТОМ ПОЗИЦИИ ПОСЛЕ УДАРА
-// ============================================================
-
-function evaluateShot(
-	striker: Stone,
-	angle: number,
-	force: number,
-	corridor: FreeCorridor,
-	goalEval: GoalEvaluation,
-	isGoalAttempt: boolean,
-	allStones: Stone[],
-	strikerIndex: number
-): { score: number; stopX: number; stopY: number; isGoal: boolean } {
-	const dx = Math.cos(angle);
-	const dy = Math.sin(angle);
-
-	const vx = dx * force;
-	const vy = dy * force;
-	const stopPos = calculateStopPosition(striker.x, striker.y, vx, vy, striker.radius);
-
-	let score = 0;
-	let isGoal = false;
-
-	// === ОЦЕНКА ГОЛА ===
-	if (isGoalAttempt && goalEval.isPossible) {
-		if (isAngleInRange(angle, goalEval.goalCorridorMin, goalEval.goalCorridorMax)) {
-			const K = -Math.log(FRICTION);
-			const threshold = 0.02 * striker.radius;
-			const dMax = (force - threshold) / K;
-
-			const goalX = 0;
-			const clampedY = Math.max(GOAL_Y, Math.min(GOAL_Y + GOAL_HEIGHT, striker.y));
-			const dGate = Math.hypot(goalX - striker.x, clampedY - striker.y);
-
-			if (dMax >= dGate) {
-				isGoal = true;
-				score += 20000;
-				score += goalEval.confidence * 5000;
-			}
-		}
-	}
-
-	// === БАЗОВАЯ ТАКТИЧЕСКАЯ ОЦЕНКА ===
-
-	// Штраф за вылет за стол
-	if (!isGoal) {
-		if (stopPos.x < 0 || stopPos.x > LOGICAL_WIDTH ||
-			stopPos.y < 0 || stopPos.y > LOGICAL_HEIGHT) {
-			score -= 5000;
-		}
-	}
-
-	// Штраф за риск (узкий коридор текущего удара)
-	const corridorWidth = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
-	const risk = corridorWidth < 0.1 ? 0.8 : (corridorWidth < 0.3 ? 0.4 : 0.1);
-	score -= risk * currentPenalties.riskPenalty;
-
-	// Бонус за запас прочности коридора
-	score += Math.min(corridor.margin, 50) * 20;
-
-	// Штраф за силу (базовый, без множителей)
-	score -= (force / MAX_FORCE) * currentPenalties.forcePenalty;
-
-	// === ОЦЕНКА ПОЗИЦИИ ПОСЛЕ УДАРА (двухходовка) ===
-	if (!isGoal && !isNaN(stopPos.x) && !isNaN(stopPos.y)) {
-		const nextPositionScore = evaluateNextPosition(
-			allStones,
-			strikerIndex,
-			stopPos.x,
-			stopPos.y
-		);
-
-		// Вес оценки следующей позиции
-		score += nextPositionScore * 0.7;
-	}
-
-	return { score, stopX: stopPos.x, stopY: stopPos.y, isGoal };
-}
-/**
- * Оценивает геометрическое качество треугольника из трёх камней.
- * 
- * Хороший треугольник:
- * - Нет острых углов (< 25°) — иначе узкие гейты
- * - Нет вырожденных углов (> 150°) — иначе камни на одной линии
- * - Стороны 5-15 диаметров — не слишком близко и не слишком далеко
- * - Биток "снаружи" гейта (не между камнями)
- * 
- * @returns Оценка от -10000 (ужасный) до +5000 (отличный)
- */
-function evaluateTriangleGeometry(
-	striker: Stone,
-	gateA: Stone,
-	gateB: Stone
-): number {
-	let score = 0;
-	const D = striker.radius * 2; // Диаметр
-
-	// Длины сторон
-	const a = Math.hypot(gateA.x - gateB.x, gateA.y - gateB.y); // сторона против битка
-	const b = Math.hypot(striker.x - gateB.x, striker.y - gateB.y); // сторона против A
-	const c = Math.hypot(striker.x - gateA.x, striker.y - gateA.y); // сторона против B
-
-	// === 1. Оценка длин сторон ===
-	const minSide = 5 * D;   // 5 диаметров
-	const maxSide = 15 * D;  // 15 диаметров
-	const optimalSide = 8 * D; // Оптимальная длина
-
-	for (const side of [a, b, c]) {
-		if (side < minSide) {
-			// Слишком короткая сторона — камни слиплись
-			score -= (minSide - side) * 30;
-		} else if (side > maxSide) {
-			// Слишком длинная сторона — неудобное расстояние
-			score -= (side - maxSide) * 10;
-		} else {
-			// Бонус за близость к оптимальной длине
-			const deviation = Math.abs(side - optimalSide);
-			score += Math.max(0, 300 - deviation * 2);
-		}
-	}
-
-	// === 2. Оценка углов (через теорему косинусов) ===
-	// Угол при битке (против стороны a)
-	const angleAtStriker = Math.acos((b * b + c * c - a * a) / (2 * b * c));
-	// Угол при A (против стороны b)
-	const angleAtA = Math.acos((a * a + c * c - b * b) / (2 * a * c));
-	// Угол при B (против стороны c)
-	const angleAtB = Math.acos((a * a + b * b - c * c) / (2 * a * b));
-
-	const angles = [angleAtStriker, angleAtA, angleAtB];
-	const MIN_ANGLE = 25 * Math.PI / 180;   // 25°
-	const MAX_ANGLE = 140 * Math.PI / 180;  // 140°
-	const OPTIMAL_ANGLE = 60 * Math.PI / 180; // 60°
-
-	for (const angle of angles) {
-		if (isNaN(angle)) {
-			// Вырожденный треугольник (камни на одной линии)
-			score -= 5000;
-			continue;
-		}
-
-		if (angle < MIN_ANGLE) {
-			// Слишком острый угол — узкий гейт
-			score -= (MIN_ANGLE - angle) * 5000;
-		} else if (angle > MAX_ANGLE) {
-			// Слишком тупой угол — камни почти на одной линии
-			score -= (angle - MAX_ANGLE) * 3000;
-		} else {
-			// Бонус за близость к оптимальному углу
-			const deviation = Math.abs(angle - OPTIMAL_ANGLE);
-			score += Math.max(0, 200 - deviation * 300);
-		}
-	}
-
-	// === 3. Проверка: биток не между камнями гейта ===
-	// Биток должен быть "снаружи" гейта (не в полосе между камнями в направлении от центра)
-	const gateCenterX = (gateA.x + gateB.x) / 2;
-	const gateCenterY = (gateA.y + gateB.y) / 2;
-	const distToStriker = Math.hypot(striker.x - gateCenterX, striker.y - gateCenterY);
-
-	// Проекция вектора от центра гейта к битку на перпендикуляр к гейту
-	const gateDirX = gateB.x - gateA.x;
-	const gateDirY = gateB.y - gateA.y;
-	const gateLen = Math.hypot(gateDirX, gateDirY);
-
-	if (gateLen > 1e-6) {
-		// Перпендикуляр к гейту
-		const perpX = -gateDirY / gateLen;
-		const perpY = gateDirX / gateLen;
-
-		// Проекция вектора (центр гейта → биток) на перпендикуляр
-		const projX = striker.x - gateCenterX;
-		const projY = striker.y - gateCenterY;
-		const projOnPerp = Math.abs(projX * perpX + projY * perpY);
-
-		// Если проекция мала — биток в плоскости гейта (плохо для следующего удара)
-		if (projOnPerp < 3 * D) {
-			score -= (3 * D - projOnPerp) * 100;
-		}
-	}
-
-	return score;
-}
-/**
- * Оценивает качество позиции после удара через геометрию треугольника.
- */
-function evaluateNextPosition(
-	allStones: Stone[],
-	strikerIndex: number,
-	strikerStopX: number,
-	strikerStopY: number
-): number {
-	// Проверяем, не вылетел ли биток
-	if (strikerStopX < 0 || strikerStopX > LOGICAL_WIDTH ||
-		strikerStopY < 0 || strikerStopY > LOGICAL_HEIGHT) {
-		return -8000; // Очень плохая позиция
-	}
-
-	// Создаём копию камней с обновлённой позицией битка
-	const simulatedStones = allStones.map((s, idx) => {
-		if (idx === strikerIndex) {
-			return {
-				...s,
-				x: strikerStopX,
-				y: strikerStopY,
-				vx: 0,
-				vy: 0
-			} as Stone;
-		}
-		return s;
-	});
-
-	const available = simulatedStones.filter(s => !s.isOut);
-	if (available.length !== 3) return -5000;
-
-	// === ОСНОВНАЯ ОЦЕНКА: геометрия треугольника ===
-	// Перебираем все 3 варианта: каждый камень как потенциальный биток следующего удара
-	let bestTriangleScore = -Infinity;
-	let hasValidCorridor = false;
-
-	for (let i = 0; i < 3; i++) {
-		const nextStriker = available[i];
-		const gates = available.filter((_, idx) => idx !== i);
-
-		if (gates.length !== 2) continue;
-
-		// Оценка геометрии треугольника
-		const triangleScore = evaluateTriangleGeometry(nextStriker, gates[0], gates[1]);
-
-		// Проверяем, есть ли свободный коридор для следующего удара
-		const corridor = buildFreeCorridor(nextStriker, gates[0], gates[1]);
-
-		let corridorBonus = 0;
-		if (corridor.isValid) {
-			hasValidCorridor = true;
-			// Бонус за ширину коридора и запас прочности
-			const width = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
-			corridorBonus = width * 1000 + Math.min(corridor.margin, 30) * 50;
-		} else {
-			// Нет коридора для этого битка — штраф
-			corridorBonus = -2000;
-		}
-
-		const totalScore = triangleScore + corridorBonus;
-		if (totalScore > bestTriangleScore) {
-			bestTriangleScore = totalScore;
-		}
-	}
-
-	// === Штраф, если ни для одного битка нет свободного коридора ===
-	if (!hasValidCorridor) {
-		bestTriangleScore -= 10000; // Критически плохая позиция
-	}
-
-	return bestTriangleScore;
-}
-
-// ============================================================
-// ОСНОВНЫЕ ФУНКЦИИ
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
 
 /**
- * Находит лучший ход среди всех доступных камней.
- * 
- * @param allStones - все камни на поле (для построения гейтов)
- * @param gateCenter - центр створа (ориентир)
- * @param excludedStriker - камень, который нельзя использовать как биток (правило чередования)
+ * Вычисляет максимальную силу удара, при которой биток не вылетит за край поля.
+ * Для голевых направлений возвращает MAX_FORCE.
  */
+function calculateMaxForceForDirection(
+    striker: Stone,
+    angle: number,
+    isGoalDirection: boolean
+): number {
+    if (isGoalDirection) {
+        return MAX_FORCE;
+    }
+    
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    
+    let maxDist = Infinity;
+    
+    if (dirX > 0.001) {
+        maxDist = Math.min(maxDist, (LOGICAL_WIDTH - striker.x) / dirX);
+    } else if (dirX < -0.001) {
+        maxDist = Math.min(maxDist, -striker.x / dirX);
+    }
+    
+    if (dirY > 0.001) {
+        maxDist = Math.min(maxDist, (LOGICAL_HEIGHT - striker.y) / dirY);
+    } else if (dirY < -0.001) {
+        maxDist = Math.min(maxDist, -striker.y / dirY);
+    }
+    
+    const K = -Math.log(FRICTION);
+    const threshold = 0.02 * striker.radius;
+    const maxForce = maxDist * K + threshold;
+    
+    return Math.min(maxForce, MAX_FORCE);
+}
+
+
+/**
+ * Генерирует список кандидатов (возможных ударов) для ОДНОГО битка.
+ *
+ * Для битка `striker` перебираем сетку "направление × сила" внутри его
+ * свободного коридора `corridor`. Каждый узел сетки = один кандидат.
+ *
+ * КЛЮЧЕВОЕ (восстановлено после рефакторинга): диапазон сил для каждого
+ * направления берётся НЕ как "доля от максимума", а из геометрии:
+ *   forceMin — минимальная сила, чтобы биток пересёк отрезок гейта и ушёл
+ *              за точку пересечения на 2 радиуса (осмысленный проход гейта);
+ *   forceMax — потолок силы, зависящий от того, голевое ли направление:
+ *              • голевое  -> биток пролетает границу поля на 2 диаметра наружу
+ *                            (гарантия пересечения створа; гол в игре засчитается
+ *                            ещё раньше, в прямоугольнике ворот — см. isGoalShot);
+ *              • не-голевое -> биток останавливается за R до границы (не вылетает);
+ *              в обоих случаях forceMax не превышает MAX_FORCE.
+ *   Силы распределяются равномерно ОТ forceMin ДО forceMax.
+ *
+ * Про углы и ±180°: коридор и голевой коридор могут пересекать границу ±180°,
+ * поэтому углы генерируются непрерывным окном вокруг alphaCenter, а голевость
+ * угла проверяется через isAngleInRange (она корректно обрабатывает wrap).
+ *
+ * @param striker   - биток, которым рассматриваем удар
+ * @param gates     - два камня-гейта (препятствия, через которые надо пройти)
+ * @param allStones - все камни (для indexOf и метрик)
+ * @param corridor  - свободный коридор битка (угловое окно пролёта через гейт)
+ */
+function buildCandidatesForStriker(
+    striker: Stone,
+    gates: [Stone, Stone],
+    allStones: Stone[],
+    corridor: FreeCorridor
+): CachedCandidate[] {
+    const candidates: CachedCandidate[] = [];
+
+    // Геометрические точки: позиция битка и центры камней гейта.
+    const P = { x: striker.x, y: striker.y };
+    const A = { x: gates[0].x, y: gates[0].y };
+    const B = { x: gates[1].x, y: gates[1].y };
+    const R = striker.radius;
+
+    // Параметры связи "сила <-> дистанция остановки" при трении.
+    // dMax = (force - thr) / K  =>  force = dMax * K + thr.
+    const K = -Math.log(FRICTION);
+    const thr = 0.02 * R;
+
+    // Параметры ворот для оценки гола (бот = игрок 2 -> левые ворота, goalX = 0).
+    const goalParams = {
+        goalX: 0,
+        goalTop: LOGICAL_HEIGHT / 2 - 100,
+        goalBottom: LOGICAL_HEIGHT / 2 + 100,
+        maxForce: MAX_FORCE,
+        friction: FRICTION,
+        accuracyEnabled: accuracyEnabled,
+        spreadFactor: spreadFactor
+    };
+
+    // Оценка голевой возможности битка через его коридор (разворот углов внутри
+    // уже сделан, поэтому wrap-кейс ±180° здесь не ломает пересечение).
+    const goalEval = evaluateGoalPossibility(striker, corridor, goalParams);
+
+    // isGoalAttempt — "биток в принципе способен забить с достаточной уверенностью".
+    // Порог высокий (goalConfidenceThreshold): этим флагом в calculateMetrics
+    // помечается кандидат как isGoal и начисляется бонус +20000. Применяется на
+    // уровне битка; конкретный угол/сила дополнительно проверяются в isGoalShot.
+    const isGoalAttempt = goalEval.isPossible && goalEval.confidence >= goalConfidenceThreshold;
+
+    // Непрерывное угловое окно коридора вокруг центра (корректно при ±180°).
+    // Наивная интерполяция alphaMin..alphaMax для wrap-коридора пошла бы "через 0"
+    // (вправо) — это и был баг "биток бьёт в правый борт при открытом левом голе".
+    const corrWidth = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
+    const corrLo = corridor.alphaCenter - corrWidth / 2;
+    const corrHi = corridor.alphaCenter + corrWidth / 2;
+
+    // Внешний цикл — по направлениям (углам) внутри коридора.
+    for (let i = 0; i < angleSteps; i++) {
+        // Середина i-й угловой ячейки (равномерное покрытие без краевых касательных).
+        const angle = corrLo + (corrHi - corrLo) * (i + 0.5) / angleSteps;
+        const dirX = Math.cos(angle);
+        const dirY = Math.sin(angle);
+
+        // --- forceMin: пересечь отрезок гейта и уйти на 2R за него ---
+        const dGate = rayToSegmentDistance(P.x, P.y, dirX, dirY, A.x, A.y, B.x, B.y);
+        if (dGate === Infinity) {
+            // Луч не пересекает отрезок гейта — для этого угла проход невозможен.
+            // Внутри валидного коридора такого быть не должно, но это защита.
+            continue;
+        }
+        const forceMin = (dGate + 2 * R) * K + thr;
+
+        // --- forceMax: зависит от того, голевое ли это направление ---
+        const dBoundary = distanceToBoundary(P.x, P.y, dirX, dirY, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+        // Голевое направление = угол лежит внутри голевого коридора (пересечение
+        // коридора битка со створом ворот). Проверяем на уровне угла, а не битка:
+        // внутри одного коридора могут быть и голевые, и не-голевые направления.
+        const isGoalAngle = goalEval.isPossible &&
+            isAngleInRange(angle, goalEval.goalCorridorMin, goalEval.goalCorridorMax);
+
+        // Целевая дистанция остановки:
+        //   голевое  -> за границей на 2 диаметра (4R) наружу;
+        //   прочее   -> за R до границы (чтобы не вылететь).
+        const dMaxStop = isGoalAngle ? (dBoundary + 4 * R) : (dBoundary - R);
+        let forceMax = dMaxStop * K + thr;
+
+        // Потолок силы — не больше MAX_FORCE ни при каких обстоятельствах.
+        if (forceMax > MAX_FORCE) forceMax = MAX_FORCE;
+
+        // Если даже максимум не дотягивает до минимума — для этого угла нет
+        // валидной силы (биток либо не проходит гейт, либо вылетает). Пропускаем.
+        if (forceMax < forceMin) continue;
+
+        // Внутренний цикл — по силам, равномерно ОТ forceMin ДО forceMax включительно.
+        for (let j = 0; j < forceSteps; j++) {
+            const force = forceMin + (forceMax - forceMin) * j / (forceSteps - 1);
+
+            // Прогнозируемая точка остановки при таком ударе (идёт в метрики и отчёт).
+            const stopPos = calculateStopPosition(
+                striker.x, striker.y,
+                dirX * force, dirY * force,
+                R
+            );
+
+            // Метрики позиции после удара (треугольник, гибкость, isGoal и т.д.).
+            // params обязан содержать все 6 полей MetricsParams.
+            const metrics = calculateMetrics(
+                striker, gates[0], gates[1], allStones,
+                angle, force, corridor, goalEval, isGoalAttempt,
+                {
+                    goalX: 0,
+                    goalCenterY: LOGICAL_HEIGHT / 2,
+                    friction: FRICTION,
+                    logicalWidth: LOGICAL_WIDTH,
+                    logicalHeight: LOGICAL_HEIGHT,
+                    stoneRadius: STONE_RADIUS
+                }
+            );
+
+            // currentScore = 0: оценки проставляются пакетно в recalculateScores,
+            // чтобы при смене весов/пресета не перебирать геометрию заново.
+            candidates.push({
+                strikerIndex: allStones.indexOf(striker),
+                angle,
+                force,
+                stopX: stopPos.x,
+                stopY: stopPos.y,
+                metrics,
+                currentScore: 0
+            });
+        }
+    }
+
+    return candidates;
+}
+
+/**
+ * Преобразует CachedCandidate в AIMove.
+ */
+function candidateToAIMove(c: CachedCandidate, stones: Stone[]): AIMove {
+    const striker = stones[c.strikerIndex];
+    return {
+        stone: striker,
+        targetX: striker.x + Math.cos(c.angle) * 1000,
+        targetY: striker.y + Math.sin(c.angle) * 1000,
+        score: c.currentScore,
+        force: c.force,
+        isFinalShot: c.metrics.isGoal,
+        risk: c.metrics.corridorWidth < 10 ? 0.8 : 0.2,
+        type: c.metrics.isGoal ? 'GOAL' : 'PASS',
+        stopX: c.stopX,
+        stopY: c.stopY,
+        blockedByGates: false
+    };
+}
+
+// ============================================================
+// ОЦЕНКА КАНДИДАТОВ
+// ============================================================
+
+export function calculateScoreFromMetrics(
+    candidate: CachedCandidate,
+    weights: Weights = currentWeights,
+    spread: number = 0.1
+): number {
+    const m = candidate.metrics;
+    let score = 0;
+    
+    const spreadMultiplier = 1 + spread * 10;
+    const effectiveRiskPenalty = weights.riskPenalty * spreadMultiplier;
+    const effectiveForcePenalty = weights.forcePenalty * spreadMultiplier;
+    
+    if (m.isGoal) {
+        score += 20000;
+        score += m.goalConfidence * 5000;
+    }
+    
+    if (!m.isGoal) {
+        score += (m.triangleQuality / 10000) * weights.triangleQualityBonus;
+        score += m.flexibilityCount * weights.flexibilityBonus / 2;
+        
+        const maxDistance = LOGICAL_WIDTH;
+        score += ((maxDistance - m.goalDistance) / maxDistance) * weights.goalProximityBonus;
+        score += Math.min(m.safetyMargin, 50) * (weights.safetyMarginBonus / 50);
+        
+        if (m.advancement > 0) {
+            const cappedAdvancement = Math.min(m.advancement, 200);
+            score += (cappedAdvancement / 100) * weights.advancementBonus;
+        } else {
+            score += m.advancement * weights.retreatPenalty;
+        }
+    }
+    
+    const risk = m.corridorWidth < 0.1 ? 0.8 : (m.corridorWidth < 0.3 ? 0.4 : 0.1);
+    score -= risk * effectiveRiskPenalty;
+    score -= (candidate.force / MAX_FORCE) * effectiveForcePenalty;
+    
+    if (!m.isGoal) {
+        if (m.edgeDistance < STONE_RADIUS) {
+            score -= (STONE_RADIUS - m.edgeDistance) * (weights.edgePenalty / STONE_RADIUS);
+        }
+        
+        const D = STONE_RADIUS * 2;
+        const maxSide = 8 * D;
+        let excessSides = 0;
+        const side1 = m.triangleAvgSide;
+        const side2 = m.triangleAvgSide;
+        const side3 = m.triangleAvgSide;
+        
+        if (side1 > maxSide) excessSides += (side1 - maxSide);
+        if (side2 > maxSide) excessSides += (side2 - maxSide);
+        if (side3 > maxSide) excessSides += (side3 - maxSide);
+        
+        if (excessSides > 0) {
+            score -= excessSides * (weights.largeTrianglePenalty / 100);
+        }
+        
+        if (candidate.stopX < 0 || candidate.stopX > LOGICAL_WIDTH || 
+            candidate.stopY < 0 || candidate.stopY > LOGICAL_HEIGHT) {
+            score -= weights.badPositionPenalty;
+        }
+    }
+    
+    return score;
+}
+
+export function recalculateScores(
+    candidates: CachedCandidate[],
+    weights: Weights = currentWeights,
+    spread: number = 0.1
+): void {
+    for (const candidate of candidates) {
+        candidate.currentScore = calculateScoreFromMetrics(candidate, weights, spread);
+    }
+}
+
+// ============================================================
+// ПОИСК ЛУЧШЕГО ХОДА
+// ============================================================
+
+export function findBestMoveFromCandidates(
+    candidates: CachedCandidate[],
+    allStones: Stone[]
+): AIMove | null {
+    if (candidates.length === 0) return null;
+    
+    let bestCandidate: CachedCandidate | null = null;
+    let bestScore = -Infinity;
+    
+    for (const candidate of candidates) {
+        if (candidate.currentScore > bestScore) {
+            bestScore = candidate.currentScore;
+            bestCandidate = candidate;
+        }
+    }
+    
+    if (!bestCandidate) return null;
+    return candidateToAIMove(bestCandidate, allStones);
+}
+
+export function buildCachedCandidates(
+    allStones: Stone[],
+    excludedStriker: Stone | null = null
+): { candidates: CachedCandidate[], corridors: Map<Stone, FreeCorridor> } {
+    const candidates: CachedCandidate[] = [];
+    const corridors = new Map<Stone, FreeCorridor>();
+    
+    const availableStones = allStones.filter(s => !s.isOut);
+    
+    for (const striker of availableStones) {
+        if (excludedStriker && striker === excludedStriker) continue;
+        
+        const gates = availableStones.filter(s => s !== striker);
+        if (gates.length !== 2) continue;
+        
+        const corridor = buildFreeCorridor(striker, gates[0], gates[1]);
+        if (!corridor.isValid) continue;
+        
+        corridors.set(striker, corridor);
+        
+        const strikerCandidates = buildCandidatesForStriker(
+            striker,
+            [gates[0], gates[1]],
+            allStones,
+            corridor
+        );
+        
+        candidates.push(...strikerCandidates);
+    }
+    
+    return { candidates, corridors };
+}
+
 export function findBestMove(
-	allStones: Stone[],
-	gateCenter: Point,
-	excludedStriker: Stone | null = null
-): { bestMove: AIMove | null; allConsideredMoves: AIMove[] } {
-	return findBestMoveInternal(allStones, gateCenter, true, excludedStriker);
+    allStones: Stone[],
+    gateCenter: { x: number; y: number },
+    excludedStriker: Stone | null = null
+): { 
+    bestMove: AIMove | null;
+    allConsideredMoves: AIMove[];
+    candidates: CachedCandidate[];
+    corridors: Map<Stone, FreeCorridor>
+} {
+    const { candidates, corridors } = buildCachedCandidates(allStones, excludedStriker);
+    
+    recalculateScores(candidates, currentWeights, spreadFactor);
+    
+    const bestMove = findBestMoveFromCandidates(candidates, allStones);
+    const allConsideredMoves = candidates.map(c => candidateToAIMove(c, allStones));
+    
+    return { bestMove, allConsideredMoves, candidates, corridors };
 }
 
-function findBestMoveInternal(
-	allStones: Stone[],
-	gateCenter: Point,
-	evaluateNextPosition: boolean,
-	excludedStriker: Stone | null = null
-): { bestMove: AIMove | null; allConsideredMoves: AIMove[] } {
-	const availableStones = allStones.filter(s => !s.isOut);
-	if (availableStones.length < 3) {
-		return { bestMove: null, allConsideredMoves: [] };
-	}
-
-	let bestMove: AIMove | null = null;
-	let bestScore = -Infinity;
-	const allConsideredMoves: AIMove[] = [];
-	const firstPassCandidates: AIMove[] = [];
-
-	for (const striker of availableStones) {
-		// Правило чередования: пропускаем исключённый камень
-		if (excludedStriker && striker === excludedStriker) {
-			continue;
-		}
-
-		// Гейт = два других камня (могут включать excludedStriker)
-		const gates = availableStones.filter(s => s !== striker);
-		if (gates.length !== 2) continue;
-
-		const gateA = gates[0];
-		const gateB = gates[1];
-
-		// Строим свободный коридор
-		const corridor = buildFreeCorridor(striker, gateA, gateB);
-
-		if (!corridor.isValid) {
-			continue;
-		}
-
-		// Оцениваем голевую возможность (только левые ворота)
-		const goalEval = evaluateGoalPossibility(striker, corridor);
-		const isGoalAttempt = goalEval.isPossible && goalEval.confidence >= goalConfidenceThreshold;
-
-		const strikerIndex = allStones.indexOf(striker);
-		const K = -Math.log(FRICTION);
-		const threshold = 0.02 * striker.radius;
-
-		if (isGoalAttempt) {
-			// === ГОЛЕВАЯ СТРАТЕГИЯ ===
-			const goalWidth = angleRangeWidth(goalEval.goalCorridorMin, goalEval.goalCorridorMax);
-
-			for (let i = 0; i < angleSteps; i++) {
-				const t = angleSteps === 1 ? 0.5 : i / (angleSteps - 1);
-				const angle = normalizeAngle(goalEval.goalCorridorMin + goalWidth * t);
-
-				for (let j = 0; j < forceSteps; j++) {
-					const tForce = forceSteps === 1 ? 0.5 : j / (forceSteps - 1);
-					const force = goalEval.forceMin + (goalEval.forceMax - goalEval.forceMin) * tForce;
-
-					const { score, stopX, stopY, isGoal } = evaluateShot(
-						striker, angle, force, corridor, goalEval, isGoalAttempt,
-						evaluateNextPosition ? allStones : [],
-						evaluateNextPosition ? strikerIndex : -1
-					);
-
-					const move: AIMove = {
-						stone: striker,
-						targetX: striker.x + Math.cos(angle) * 1000,
-						targetY: striker.y + Math.sin(angle) * 1000,
-						score,
-						force,
-						isFinalShot: isGoal,
-						risk: corridor.margin < 10 ? 0.8 : 0.2,
-						type: isGoal ? 'GOAL' : 'PASS',
-						stopX,
-						stopY,
-						blockedByGates: false
-					};
-
-					firstPassCandidates.push(move);
-
-					if (score > bestScore) {
-						bestScore = score;
-						bestMove = move;
-					}
-				}
-			}
-		} else {
-			// === ТАКТИЧЕСКАЯ СТРАТЕГИЯ ===
-			const corridorWidth = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
-
-			for (let i = 0; i < angleSteps; i++) {
-				const t = angleSteps === 1 ? 0.5 : i / (angleSteps - 1);
-				const angle = normalizeAngle(corridor.alphaMin + corridorWidth * t);
-
-				const dirX = Math.cos(angle);
-				const dirY = Math.sin(angle);
-
-				// === НОВОЕ: Точка пересечения с гейтом ===
-				const intersection = raySegmentIntersection(
-					striker.x, striker.y,
-					dirX, dirY,
-					gateA.x, gateA.y,
-					gateB.x, gateB.y
-				);
-
-				if (!intersection) continue;
-
-				const dToGate = intersection.distance;
-
-				// forceMin: пересечь гейт + остановиться через 2R
-				const minDistance = dToGate + 2 * striker.radius;
-				const forceMin = minDistance * K + threshold;
-
-				// forceMax: не долететь до границы поля на R
-				const dToBoundary = distanceToBoundary(striker.x, striker.y, dirX, dirY);
-				const maxDistance = dToBoundary - striker.radius;
-				const forceMax = Math.min(maxDistance * K + threshold, MAX_FORCE);
-
-				if (forceMin >= forceMax) continue;
-
-				// === НОВОЕ: Точки остановки для forceMin и forceMax ===
-				const vxMin = dirX * forceMin;
-				const vyMin = dirY * forceMin;
-				const minStopPos = calculateStopPosition(striker.x, striker.y, vxMin, vyMin, striker.radius);
-
-				const vxMax = dirX * forceMax;
-				const vyMax = dirY * forceMax;
-				const maxStopPos = calculateStopPosition(striker.x, striker.y, vxMax, vyMax, striker.radius);
-
-				// ОТЛАДКА: выводим параметры для первого угла
-				//if (i === 0) {
-				//	const actualMinDistance = Math.hypot(
-				//		minStopPos.x - striker.x,
-				//		minStopPos.y - striker.y
-				//	);
-				//	console.log(`[AI Debug] Биток: (${striker.x.toFixed(0)}, ${striker.y.toFixed(0)})`);
-				//	console.log(`[AI Debug] Угол ${(angle * 180 / Math.PI).toFixed(1)}°:`);
-				//	console.log(`  dToGate (расчёт): ${dToGate.toFixed(2)}`);
-				//	console.log(`  forceMin (расчёт): ${forceMin.toFixed(3)}`);
-				//	console.log(`  K: ${K.toFixed(4)}, threshold: ${threshold.toFixed(4)}`);
-				//	console.log(`  minStopPos: (${minStopPos.x.toFixed(2)}, ${minStopPos.y.toFixed(2)})`);
-				//	console.log(`  Реальная дистанция до minStop: ${actualMinDistance.toFixed(2)}`);
-				//	console.log(`  Разница: ${(actualMinDistance - dToGate).toFixed(2)}`);
-				//}
-
-
-				for (let j = 0; j < forceSteps; j++) {
-					const tForce = forceSteps === 1 ? 0.5 : j / (forceSteps - 1);
-					const force = forceMin + (forceMax - forceMin) * tForce;
-
-					const { score, stopX, stopY, isGoal } = evaluateShot(
-						striker, angle, force, corridor, goalEval, isGoalAttempt,
-						evaluateNextPosition ? allStones : [],
-						evaluateNextPosition ? strikerIndex : -1
-					);
-
-					const move: AIMove = {
-						stone: striker,
-						targetX: striker.x + Math.cos(angle) * 1000,
-						targetY: striker.y + Math.sin(angle) * 1000,
-						score,
-						force,
-						isFinalShot: isGoal,
-						risk: corridor.margin < 10 ? 0.8 : 0.2,
-						type: isGoal ? 'GOAL' : 'PASS',
-						stopX,
-						stopY,
-						blockedByGates: false,
-						// НОВОЕ: отладочные данные
-						gateIntersectionX: intersection.x,
-						gateIntersectionY: intersection.y,
-						minStopX: minStopPos.x,
-						minStopY: minStopPos.y,
-						maxStopX: maxStopPos.x,
-						maxStopY: maxStopPos.y
-					};
-
-					firstPassCandidates.push(move);
-
-					if (score > bestScore) {
-						bestScore = score;
-						bestMove = move;
-					}
-				}
-			}
-		}
-	}
-
-	if (evaluateNextPosition) {
-		allConsideredMoves.push(...firstPassCandidates);
-	}
-
-	return { bestMove, allConsideredMoves };
-}
+// ============================================================
+// АВАРИЙНЫЙ ХОД (ИСПРАВЛЕНИЕ 1)
+// ============================================================
 
 /**
- * Вычисляет точку пересечения луча из P в направлении dir с отрезком AB.
- * Возвращает null, если пересечения нет.
+ * Аварийный ход — когда нет валидных кандидатов.
+ * Бьёт первым доступным битком в случайном направлении с минимальной силой.
  */
-function raySegmentIntersection(
-	px: number, py: number,
-	dirX: number, dirY: number,
-	ax: number, ay: number,
-	bx: number, by: number
-): { distance: number; x: number; y: number } | null {
-	const ABx = bx - ax;
-	const ABy = by - ay;
-
-	const det = dirX * ABy - dirY * ABx;
-	if (Math.abs(det) < 1e-10) return null;
-
-	const dx = ax - px;
-	const dy = ay - py;
-
-	const t = (dx * ABy - dy * ABx) / det;
-	const s = (dx * dirY - dy * dirX) / det;
-
-	if (t < 1e-6 || s < -1e-6 || s > 1 + 1e-6) {
-		return null;
-	}
-
-	return {
-		distance: t,
-		x: px + dirX * t,
-		y: py + dirY * t
-	};
-}
-
-/**
- * Вычисляет расстояние от точки P (с направлением dir) до отрезка AB.
- * Возвращает Infinity, если луч не пересекает отрезок.
- */
-function rayToSegmentDistance(
-	px: number, py: number,
-	dirX: number, dirY: number,
-	ax: number, ay: number,
-	bx: number, by: number
-): number {
-	const ABx = bx - ax;
-	const ABy = by - ay;
-
-	const det = dirX * ABy - dirY * ABx;
-	if (Math.abs(det) < 1e-10) return Infinity; // Параллельны
-
-	const dx = ax - px;
-	const dy = ay - py;
-
-	const t = (dx * ABy - dy * ABx) / det;
-	const s = (dx * dirY - dy * dirX) / det;
-
-	// Луч: t >= 0, отрезок: s ∈ [0, 1]
-	if (t < 1e-6 || s < -1e-6 || s > 1 + 1e-6) {
-		return Infinity;
-	}
-
-	return t;
-}
-function distanceToBoundary(x: number, y: number, dirX: number, dirY: number): number {
-	let minT = Infinity;
-
-	if (dirX < 0) {
-		const t = -x / dirX;
-		if (t > 0) minT = Math.min(minT, t);
-	}
-
-	if (dirX > 0) {
-		const t = (LOGICAL_WIDTH - x) / dirX;
-		if (t > 0) minT = Math.min(minT, t);
-	}
-
-	if (dirY < 0) {
-		const t = -y / dirY;
-		if (t > 0) minT = Math.min(minT, t);
-	}
-
-	if (dirY > 0) {
-		const t = (LOGICAL_HEIGHT - y) / dirY;
-		if (t > 0) minT = Math.min(minT, t);
-	}
-
-	return minT === Infinity ? 0 : minT;
-}
-
-export function getEmergencyMove(available: Stone[]): AIMove | null {
-	if (available.length === 0) return null;
-
-	const striker = available[0];
-	const angle = Math.random() * Math.PI * 2;
-	const force = MAX_FORCE * 0.4;
-
-	const vx = Math.cos(angle) * force;
-	const vy = Math.sin(angle) * force;
-	const stopPos = calculateStopPosition(striker.x, striker.y, vx, vy, striker.radius);
-
-	return {
-		stone: striker,
-		targetX: striker.x + Math.cos(angle) * 1000,
-		targetY: striker.y + Math.sin(angle) * 1000,
-		score: -1000,
-		force,
-		isFinalShot: false,
-		risk: 0.5,
-		type: 'EMERGENCY',
-		stopX: stopPos.x,
-		stopY: stopPos.y,
-		blockedByGates: false
-	};
+export function getEmergencyMove(allStones: Stone[]): AIMove {
+    const available = allStones.filter(s => !s.isOut);
+    
+    if (available.length === 0) {
+        return {
+            stone: allStones[0],
+            targetX: LOGICAL_WIDTH / 2,
+            targetY: LOGICAL_HEIGHT / 2,
+            score: -1000,
+            force: 10,
+            isFinalShot: false,
+            risk: 1.0,
+            type: 'EMERGENCY',
+            stopX: LOGICAL_WIDTH / 2,
+            stopY: LOGICAL_HEIGHT / 2,
+            blockedByGates: false
+        };
+    }
+    
+    const striker = available[0];
+    const angle = Math.random() * Math.PI * 2;
+    const force = 10 + Math.random() * 5;
+    
+    const stopPos = calculateStopPosition(
+        striker.x, striker.y,
+        Math.cos(angle) * force,
+        Math.sin(angle) * force,
+        striker.radius
+    );
+    
+    return {
+        stone: striker,
+        targetX: striker.x + Math.cos(angle) * 1000,
+        targetY: striker.y + Math.sin(angle) * 1000,
+        score: -1000,
+        force,
+        isFinalShot: false,
+        risk: 1.0,
+        type: 'EMERGENCY',
+        stopX: stopPos.x,
+        stopY: stopPos.y,
+        blockedByGates: false
+    };
 }

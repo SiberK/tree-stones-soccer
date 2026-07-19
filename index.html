@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Бильярд</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- ИЗМЕНЕНО: путь к CSS -->
+    <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
@@ -12,7 +13,128 @@
     <!-- Кнопки управления -->
     <div class="controls">
         <button id="settingsBtn" class="icon-btn" title="Настройки">⚙️</button>
+        <button id="pauseBtn" class="icon-btn" title="Пауза (только во время хода бота)">⏸</button>
         <button id="fullscreenBtn" class="icon-btn" title="Полноэкранный режим">⛶</button>
+    </div>
+    
+    <!-- Панель пресетов (всегда видна) -->
+    <div class="presets-bar">
+        <span class="presets-label">Пресеты:</span>
+        <button class="preset-btn" data-preset="1" title="Сбалансированный">1</button>
+        <button class="preset-btn" data-preset="2" title="Агрессивный">2</button>
+        <button class="preset-btn" data-preset="3" title="Осторожный">3</button>
+        <button class="preset-btn" data-preset="4" title="Геометричный">4</button>
+        <button class="preset-btn" data-preset="5" title="Серийный">5</button>
+        <button class="preset-btn" data-preset="6" title="Пользовательский">6</button>
+    </div>
+    
+    <!-- Панель паузы (скрыта по умолчанию) -->
+    <div id="pausePanel" class="pause-panel hidden">
+        <div class="pause-header">
+            <h3>⏸ ПАУЗА · <span id="pauseStepLabel">Ход #1</span></h3>
+            <button id="resumeBtn" class="resume-btn" title="Продолжить игру">▶ Продолжить</button>
+        </div>
+        
+        <div class="pause-content">
+            <!-- Информация о текущем ходе -->
+            <div class="pause-info">
+                <div class="info-row">
+                    <span class="info-label">Биток:</span>
+                    <span id="pauseStrikerIndex" class="info-value">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Угол:</span>
+                    <span id="pauseAngle" class="info-value">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Сила:</span>
+                    <span id="pauseForce" class="info-value">—</span>
+                </div>
+                <div class="info-row highlight">
+                    <span class="info-label">Оценка:</span>
+                    <span id="pauseScore" class="info-value big">—</span>
+                </div>
+                <div class="info-row" id="pauseGoalRow" style="display: none;">
+                    <span class="info-label">🎯 ГОЛ!</span>
+                    <span class="info-value"></span>
+                </div>
+                <div class="info-row" id="pauseDeadEndRow" style="display: none;">
+                    <span class="info-label" style="color: #F44336;">⚠ Тупик!</span>
+                    <span class="info-value" style="color: #F44336;">Нет валидных ходов</span>
+                </div>
+            </div>
+            
+            <!-- Разбивка по весам -->
+            <div class="pause-breakdown">
+                <h4>Разбивка оценки</h4>
+                <div class="breakdown-section">
+                    <div class="breakdown-title bonus-title">Бонусы</div>
+                    <div class="breakdown-row">
+                        <span>Качество треуг.:</span>
+                        <span id="brkTriangleQuality">0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Гибкость:</span>
+                        <span id="brkFlexibility">0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Близость к голу:</span>
+                        <span id="brkGoalProximity">0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Запас коридора:</span>
+                        <span id="brkSafetyMargin">0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Продвижение:</span>
+                        <span id="brkAdvancement">0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>След. гол:</span>
+                        <span id="brkNextShot">0</span>
+                    </div>
+                </div>
+                <div class="breakdown-section">
+                    <div class="breakdown-title penalty-title">Штрафы</div>
+                    <div class="breakdown-row penalty">
+                        <span>Риск:</span>
+                        <span id="brkRisk">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Сила:</span>
+                        <span id="brkForce">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Близость к краю:</span>
+                        <span id="brkEdge">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Большой треуг.:</span>
+                        <span id="brkLargeTriangle">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Непроход гейта:</span>
+                        <span id="brkMissGate">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Откат:</span>
+                        <span id="brkRetreat">0</span>
+                    </div>
+                    <div class="breakdown-row penalty">
+                        <span>Плохая позиция:</span>
+                        <span id="brkBadPosition">0</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Кнопки управления -->
+            <div class="pause-buttons">
+                <button id="pauseShowBtn" class="pause-action-btn">🔄 Показать</button>
+                <button id="pauseNextBtn" class="pause-action-btn">⏭ Далее</button>
+                <button id="pauseBackBtn" class="pause-action-btn">↩ Назад</button>
+                <button id="pauseResetBtn" class="pause-action-btn">↺ Сброс</button>
+            </div>
+        </div>
     </div>
     
     <!-- Панель настроек -->
@@ -98,56 +220,92 @@
                 </div>
             </div>
             
-            <!-- Раздел: Штрафы AI -->
+            <!-- Раздел: Веса — Бонусы -->
             <div class="settings-section">
-                <h4>Штрафы ИИ</h4>
+                <h4 class="section-bonus">🎁 Веса · Бонусы</h4>
                 <div class="settings-grid">
-                    <div class="setting-item">
-                        <label for="riskPenaltySlider">Риск</label>
-                        <input type="range" id="riskPenaltySlider" min="0" max="10000" value="4000" step="500">
-                        <span id="riskPenaltyValue">4000</span>
+                    <div class="setting-item bonus">
+                        <label for="triangleQualityBonusSlider">Качество треуг.</label>
+                        <input type="range" id="triangleQualityBonusSlider" min="0" max="10000" value="3000" step="100">
+                        <span id="triangleQualityBonusValue">3000</span>
                     </div>
                     
-                    <div class="setting-item">
-                        <label for="forcePenaltySlider">Сила</label>
-                        <input type="range" id="forcePenaltySlider" min="0" max="1000" value="300" step="50">
-                        <span id="forcePenaltyValue">300</span>
+                    <div class="setting-item bonus">
+                        <label for="flexibilityBonusSlider">Гибкость</label>
+                        <input type="range" id="flexibilityBonusSlider" min="0" max="10000" value="2000" step="100">
+                        <span id="flexibilityBonusValue">2000</span>
                     </div>
                     
-                    <div class="setting-item">
-                        <label for="gatesBlockPenaltySlider">Створ</label>
-                        <input type="range" id="gatesBlockPenaltySlider" min="0" max="20000" value="10000" step="1000">
-                        <span id="gatesBlockPenaltyValue">10000</span>
+                    <div class="setting-item bonus">
+                        <label for="goalProximityBonusSlider">Близость к голу</label>
+                        <input type="range" id="goalProximityBonusSlider" min="0" max="10000" value="1500" step="100">
+                        <span id="goalProximityBonusValue">1500</span>
                     </div>
                     
-                    <div class="setting-item">
-                        <label for="missGatePenaltySlider">Непроход</label>
-                        <input type="range" id="missGatePenaltySlider" min="0" max="10000" value="5000" step="500">
-                        <span id="missGatePenaltyValue">5000</span>
+                    <div class="setting-item bonus">
+                        <label for="safetyMarginBonusSlider">Запас коридора</label>
+                        <input type="range" id="safetyMarginBonusSlider" min="0" max="5000" value="1000" step="100">
+                        <span id="safetyMarginBonusValue">1000</span>
                     </div>
                     
-                    <div class="setting-item">
+                    <div class="setting-item bonus">
                         <label for="advancementBonusSlider">Продвижение</label>
-                        <input type="range" id="advancementBonusSlider" min="0" max="10000" value="3000" step="500">
+                        <input type="range" id="advancementBonusSlider" min="0" max="10000" value="3000" step="100">
                         <span id="advancementBonusValue">3000</span>
                     </div>
                     
-                    <div class="setting-item">
+                    <div class="setting-item bonus">
+                        <label for="nextShotBonusSlider">След. гол</label>
+                        <input type="range" id="nextShotBonusSlider" min="0" max="10000" value="5000" step="100">
+                        <span id="nextShotBonusValue">5000</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Раздел: Веса — Штрафы -->
+            <div class="settings-section">
+                <h4 class="section-penalty">⚠ Веса · Штрафы</h4>
+                <div class="settings-grid">
+                    <div class="setting-item penalty">
+                        <label for="riskPenaltySlider">Риск</label>
+                        <input type="range" id="riskPenaltySlider" min="0" max="10000" value="4000" step="100">
+                        <span id="riskPenaltyValue">4000</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
+                        <label for="forcePenaltySlider">Сила</label>
+                        <input type="range" id="forcePenaltySlider" min="0" max="1000" value="300" step="10">
+                        <span id="forcePenaltyValue">300</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
+                        <label for="edgePenaltySlider">Близость к краю</label>
+                        <input type="range" id="edgePenaltySlider" min="0" max="5000" value="1500" step="100">
+                        <span id="edgePenaltyValue">1500</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
+                        <label for="largeTrianglePenaltySlider">Большой треуг.</label>
+                        <input type="range" id="largeTrianglePenaltySlider" min="0" max="5000" value="1000" step="100">
+                        <span id="largeTrianglePenaltyValue">1000</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
+                        <label for="missGatePenaltySlider">Непроход гейта</label>
+                        <input type="range" id="missGatePenaltySlider" min="0" max="10000" value="5000" step="100">
+                        <span id="missGatePenaltyValue">5000</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
+                        <label for="badPositionPenaltySlider">Плохая позиция</label>
+                        <input type="range" id="badPositionPenaltySlider" min="0" max="5000" value="2000" step="100">
+                        <span id="badPositionPenaltyValue">2000</span>
+                    </div>
+                    
+                    <div class="setting-item penalty">
                         <label for="retreatPenaltySlider">Откат</label>
                         <input type="range" id="retreatPenaltySlider" min="0" max="5" value="0.5" step="0.1">
                         <span id="retreatPenaltyValue">0.5</span>
-                    </div>
-                    
-                    <div class="setting-item">
-                        <label for="nextShotBonusSlider">След. гол</label>
-                        <input type="range" id="nextShotBonusSlider" min="0" max="10000" value="5000" step="500">
-                        <span id="nextShotBonusValue">5000</span>
-                    </div>
-                    
-                    <div class="setting-item">
-                        <label for="badPositionPenaltySlider">Позиция</label>
-                        <input type="range" id="badPositionPenaltySlider" min="0" max="5000" value="2000" step="500">
-                        <span id="badPositionPenaltyValue">2000</span>
                     </div>
                 </div>
             </div>
