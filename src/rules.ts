@@ -21,7 +21,7 @@ export function processTurnResult(): void {
     let nextPlayer = currentPlayer;
     
     // === ОТЛАДКА: выводим флаги состояния ===
-    console.log(`[Rules] Обработка результата: anyOut=${anyOut}, hitObstacle=${GameState.hitObstacle}, isGoalScored=${GameState.isGoalScored}, hasPassedThrough=${GameState.hasPassedThrough}`);
+//    console.log(`[Rules] Обработка результата: anyOut=${anyOut}, hitObstacle=${GameState.hitObstacle}, isGoalScored=${GameState.isGoalScored}, hasPassedThrough=${GameState.hasPassedThrough}`);
     
     // === ПРИОРИТЕТ 1: ВЫЛЕТ ЗА СТОЛ ===
     if (anyOut) {
@@ -113,5 +113,5 @@ export function processTurnResult(): void {
     GameState.resultTimer = 90;
     GameState.lastStruckStone = null;
     
-    console.log(`[Rules] Итоговый счёт: ${GameState.scoreLeft}:${GameState.scoreRight}, следующий игрок: ${nextPlayer}`);
+//    console.log(`[Rules] Итоговый счёт: ${GameState.scoreLeft}:${GameState.scoreRight}, следующий игрок: ${nextPlayer}`);
 }

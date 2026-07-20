@@ -10,10 +10,9 @@ import { FreeCorridor, buildFreeCorridor, angleRangeWidth } from "./geometry.js"
 import { GoalEvaluation, isGoalShot } from "./goal.js";
 import { calculateStopPosition } from "../simulation/math.js";
 import { CandidateMetrics } from "./types.js";
-import { goalConfidenceThreshold } from "../state.js"; 
+import { goalConfidenceThreshold } from "../state.js";
+import { DEBUG_AI, DEBUG_GOAL, DEBUG_CANDIDATES } from "../debug.js";
 
-// И убрать строку
-// const { angleRangeWidth } = require('./geometry.js');
 export interface MetricsParams {
 	logicalWidth: number;
 	logicalHeight: number;
@@ -40,18 +39,22 @@ export function calculateMetrics(
 ): CandidateMetrics {
 
 	// === ОТЛАДКА: лог для КАЖДОГО кандидата ===
-	const willBeGoal = isGoalAttempt && isGoalShot(
+	// Гол считаем ОДИН раз (раньше считалось дважды: для лога и для return — чистый дубль).
+	// isGoalShot зависит только от striker/angle/force/goalEval/goalX/friction — всё уже есть,
+	// поэтому вычислить можно здесь, до stopPos, и переиспользовать ниже.
+	const isGoal = isGoalAttempt && isGoalShot(
 		striker, angle, force, goalEval, params.goalX, params.friction
 	);
 
-    // Логируем каждый 10-й кандидат или все голы
-    if (willBeGoal || (allStones.indexOf(striker) === 0 && Math.random() < 0.1)) {
-        console.log(`[GOAL DEBUG] Биток ${striker.name}:`);
-        console.log(`  angle=${(angle*180/Math.PI).toFixed(1)}°, force=${force.toFixed(1)}`);
-        console.log(`  isGoalAttempt=${isGoalAttempt}, willBeGoal=${willBeGoal}`);
-        console.log(`  confidence=${goalEval.confidence.toFixed(2)}, threshold=${goalConfidenceThreshold}`);
-        console.log(`  corridor=[${(goalEval.goalCorridorMin*180/Math.PI).toFixed(1)}°, ${(goalEval.goalCorridorMax*180/Math.PI).toFixed(1)}°]`);
-    }
+	if (DEBUG_AI && DEBUG_GOAL) {
+		if (isGoal || (allStones.indexOf(striker) === 0 && Math.random() < 0.1)) {
+			console.log(`[GOAL DEBUG] Биток ${striker.name}:`);
+			console.log(`  angle=${(angle * 180 / Math.PI).toFixed(1)}°, force=${force.toFixed(1)}`);
+			console.log(`  isGoalAttempt=${isGoalAttempt}, isGoal=${isGoal}`);
+			console.log(`  confidence=${goalEval.confidence.toFixed(2)}, threshold=${goalConfidenceThreshold}`);
+			console.log(`  corridor=[${(goalEval.goalCorridorMin * 180 / Math.PI).toFixed(1)}°, ${(goalEval.goalCorridorMax * 180 / Math.PI).toFixed(1)}°]`);
+		}
+	}
 	const dx = Math.cos(angle);
 	const dy = Math.sin(angle);
 
@@ -170,17 +173,9 @@ export function calculateMetrics(
 	const currentDist = Math.hypot(striker.x - goalX, striker.y - goalCenterY);
 	const advancement = currentDist - goalDistance;
 
-	// === 7. Ширина коридора ===
-	const corridorWidth = (corridor as any).alphaMax !== undefined
-		? Math.abs(((corridor as any).alphaMax - (corridor as any).alphaMin))
-		: 0;
-	// Используем импортированную функцию
-	const finalCorridorWidth = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
-
-	// === 8. Является ли ход голевым ===
-	const isGoal = isGoalAttempt && isGoalShot(
-		striker, angle, force, goalEval, goalX, friction
-	);
+	// === 7. Ширина коридора === через устойчивую к wrap ±180° функцию (НЕ через вычитание углов:
+	// для wrap-коридора [2.97, -2.97] наивное alphaMax-alphaMin даст -5.94, а не 0.34).
+	const corridorWidth = angleRangeWidth(corridor.alphaMin, corridor.alphaMax);
 
 	return {
 		triangleQuality,
@@ -190,7 +185,7 @@ export function calculateMetrics(
 		safetyMargin,
 		triangleAvgSide,
 		advancement,
-		corridorWidth: finalCorridorWidth,
+		corridorWidth,
 		isGoal,
 		goalConfidence: goalEval.confidence
 	};

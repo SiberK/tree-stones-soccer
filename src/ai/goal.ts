@@ -6,6 +6,7 @@
 
 import { Stone } from "../stone.js";
 import { FreeCorridor, normalizeAngle, angleRangeWidth, isAngleInRange } from "./geometry.js";
+import { DEBUG_AI, DEBUG_GOAL, DEBUG_CANDIDATES } from "../debug.js";
 
 export interface GoalEvaluation {
 	isPossible: boolean;
@@ -55,7 +56,8 @@ export function evaluateGoalPossibility(
 		corridor.alphaMax
 	);
 	if (!isPointingToGoal) {
-		console.log(`[GOAL REJECT] Направление на ворота вне коридора! dirToGoal=${(normalizeAngle(dirToGoal) * 180 / Math.PI).toFixed(1)}°, corridor=[${(corridor.alphaMin * 180 / Math.PI).toFixed(1)}°, ${(corridor.alphaMax * 180 / Math.PI).toFixed(1)}°]`);
+		if (DEBUG_AI && DEBUG_GOAL)
+			console.log(`[GOAL REJECT] Направление на ворота вне коридора! dirToGoal=${(normalizeAngle(dirToGoal) * 180 / Math.PI).toFixed(1)}°, corridor=[${(corridor.alphaMin * 180 / Math.PI).toFixed(1)}°, ${(corridor.alphaMax * 180 / Math.PI).toFixed(1)}°]`);
 		return {
 			isPossible: false, confidence: 0,
 			goalCorridorMin: 0, goalCorridorMax: 0,
@@ -149,69 +151,70 @@ export function evaluateGoalPossibility(
  * Проверяет, является ли конкретный угол+сила голевым ударом.
  */
 export function isGoalShot(
-    striker: Stone,
-    angle: number,
-    force: number,
-    goalEval: GoalEvaluation,
-    goalX: number,
-    friction: number
+	striker: Stone,
+	angle: number,
+	force: number,
+	goalEval: GoalEvaluation,
+	goalX: number,
+	friction: number
 ): boolean {
-    if (!goalEval.isPossible) return false;
-    
-    if (!isAngleInRange(angle, goalEval.goalCorridorMin, goalEval.goalCorridorMax)) {
-        return false;
-    }
-    
-    const K = -Math.log(friction);
-    const threshold = 0.02 * striker.radius;
-    const dMax = (force - threshold) / K;
-    
-    const dirX = Math.cos(angle);
-    const dirY = Math.sin(angle);
-    
-    if (Math.abs(dirX) < 0.1) {
-        if (Math.abs(striker.x - goalX) > striker.radius * 2) {
-            return false;
-        }
-    }
-    
-    const t = (goalX - striker.x) / dirX;
-    if (t < 0) return false;
-    
-    const intersectionY = striker.y + dirY * t;
-    
-    const goalTop = goalEval.targetY - 100;
-    const goalBottom = goalEval.targetY + 100;
-    const tolerance = 50; // Увеличенный допуск
-    
-    // === НОВОЕ: Проверка попадания в прямоугольник ворот ===
-    const goalRectLeft = goalX - 20; // Ширина ворот ~40px
-    const goalRectRight = goalX + 20;
-    
-    // Вычисляем точку остановки
-    const stopX = striker.x + dirX * dMax;
-    const stopY = striker.y + dirY * dMax;
-    
-    // Проверяем, попадает ли точка остановки в прямоугольник ворот
-    const inGoalRect = (
-        stopX >= goalRectLeft && stopX <= goalRectRight &&
-        stopY >= goalTop && stopY <= goalBottom
-    );
-    
-    if (inGoalRect) {
-        return true; // Гол засчитан!
-    }
-    // ============================================================
-    
-    if (intersectionY < goalTop - tolerance || intersectionY > goalBottom + tolerance) {
-        if (Math.abs(intersectionY) < 2000) {
-            console.log(`[GOAL MISS] Биток пролетает мимо ворот! intersectionY=${intersectionY.toFixed(0)}, goalY=[${goalTop.toFixed(0)}, ${goalBottom.toFixed(0)}]`);
-        }
-        return false;
-    }
-    
-    const clampedY = Math.max(goalTop, Math.min(goalBottom, intersectionY));
-    const dGate = Math.hypot(goalX - striker.x, clampedY - striker.y);
-    
-    return dMax >= dGate;
+	if (!goalEval.isPossible) return false;
+
+	if (!isAngleInRange(angle, goalEval.goalCorridorMin, goalEval.goalCorridorMax)) {
+		return false;
+	}
+
+	const K = -Math.log(friction);
+	const threshold = 0.02 * striker.radius;
+	const dMax = (force - threshold) / K;
+
+	const dirX = Math.cos(angle);
+	const dirY = Math.sin(angle);
+
+	if (Math.abs(dirX) < 0.1) {
+		if (Math.abs(striker.x - goalX) > striker.radius * 2) {
+			return false;
+		}
+	}
+
+	const t = (goalX - striker.x) / dirX;
+	if (t < 0) return false;
+
+	const intersectionY = striker.y + dirY * t;
+
+	const goalTop = goalEval.targetY - 100;
+	const goalBottom = goalEval.targetY + 100;
+	const tolerance = 50; // Увеличенный допуск
+
+	// === НОВОЕ: Проверка попадания в прямоугольник ворот ===
+	const goalRectLeft = goalX - 20; // Ширина ворот ~40px
+	const goalRectRight = goalX + 20;
+
+	// Вычисляем точку остановки
+	const stopX = striker.x + dirX * dMax;
+	const stopY = striker.y + dirY * dMax;
+
+	// Проверяем, попадает ли точка остановки в прямоугольник ворот
+	const inGoalRect = (
+		stopX >= goalRectLeft && stopX <= goalRectRight &&
+		stopY >= goalTop && stopY <= goalBottom
+	);
+
+	if (inGoalRect) {
+		return true; // Гол засчитан!
+	}
+	// ============================================================
+
+	if (intersectionY < goalTop - tolerance || intersectionY > goalBottom + tolerance) {
+		if (Math.abs(intersectionY) < 2000) {
+			if (DEBUG_AI && DEBUG_GOAL)
+				console.log(`[GOAL MISS] Биток пролетает мимо ворот! intersectionY=${intersectionY.toFixed(0)}, goalY=[${goalTop.toFixed(0)}, ${goalBottom.toFixed(0)}]`);
+		}
+		return false;
+	}
+
+	const clampedY = Math.max(goalTop, Math.min(goalBottom, intersectionY));
+	const dGate = Math.hypot(goalX - striker.x, clampedY - striker.y);
+
+	return dMax >= dGate;
 }

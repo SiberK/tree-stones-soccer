@@ -25,6 +25,7 @@ import {
 import { 
     CachedCandidate, AIMove, Weights 
 } from "./types.js";
+import { DEBUG_AI, DEBUG_GOAL, DEBUG_CANDIDATES } from "../debug.js";
 
 // ============================================================
 // ПАРАМЕТРЫ ПЕРЕБОРА
@@ -36,45 +37,6 @@ const forceSteps = 6;
 // ============================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
-
-/**
- * Вычисляет максимальную силу удара, при которой биток не вылетит за край поля.
- * Для голевых направлений возвращает MAX_FORCE.
- */
-function calculateMaxForceForDirection(
-    striker: Stone,
-    angle: number,
-    isGoalDirection: boolean
-): number {
-    if (isGoalDirection) {
-        return MAX_FORCE;
-    }
-    
-    const dirX = Math.cos(angle);
-    const dirY = Math.sin(angle);
-    
-    let maxDist = Infinity;
-    
-    if (dirX > 0.001) {
-        maxDist = Math.min(maxDist, (LOGICAL_WIDTH - striker.x) / dirX);
-    } else if (dirX < -0.001) {
-        maxDist = Math.min(maxDist, -striker.x / dirX);
-    }
-    
-    if (dirY > 0.001) {
-        maxDist = Math.min(maxDist, (LOGICAL_HEIGHT - striker.y) / dirY);
-    } else if (dirY < -0.001) {
-        maxDist = Math.min(maxDist, -striker.y / dirY);
-    }
-    
-    const K = -Math.log(FRICTION);
-    const threshold = 0.02 * striker.radius;
-    const maxForce = maxDist * K + threshold;
-    
-    return Math.min(maxForce, MAX_FORCE);
-}
-
-
 /**
  * Генерирует список кандидатов (возможных ударов) для ОДНОГО битка.
  *
