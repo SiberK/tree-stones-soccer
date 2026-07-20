@@ -10,11 +10,11 @@ import {
     LOGICAL_WIDTH, LOGICAL_HEIGHT,
     PULL_SENSITIVITY
 } from "./state.js";
-import { GameMath, Point } from "./math.js";
+import { Point } from "./math.js";
 import { Stone } from "./stone.js";
 import { simulationController } from "./simulation/controller.js";
 import { ShotData } from "./simulation/types.js";
-
+import { resolveShotVector } from "./simulation/kinematics.js";
 function getStoneAt(x: number, y: number): Stone | undefined {
     const stone = stones.find(s => !s.isOut && Math.hypot(s.x - x, s.y - y) < s.radius + 20);
 
@@ -153,19 +153,23 @@ export function endAim(): void {
 
     const baseAngle = Math.atan2(tvy, tvx);
 
-    const spreadValue = accuracyEnabled ? 0 : spreadFactor;
-    const spread = (force / MAX_FORCE) ** 2 * spreadValue;
-    const finalAngle = GameMath.randomGaussian(baseAngle, spread);
-
+    const shot = resolveShotVector(
+        { force, angle: baseAngle },
+        { accuracyEnabled, spreadFactor, maxForce: MAX_FORCE }
+    );
     // ОТЛАДКА
-    const angleDeviationDeg = (finalAngle - baseAngle) * 180 / Math.PI;
-    console.log(`[Player] Удар: сила=${force.toFixed(1)}, угол=${(baseAngle * 180 / Math.PI).toFixed(1)}°, разброс=${(spread * 180 / Math.PI).toFixed(2)}°, отклонение=${angleDeviationDeg.toFixed(2)}°, точность=${accuracyEnabled}`);
+    const angleDeviationDeg = (shot.angle - baseAngle) * 180 / Math.PI;
+    console.log(`[Player] Удар: сила=${shot.force.toFixed(1)},`
+	+ ` угол=${(baseAngle * 180 / Math.PI).toFixed(1)}°,`
+	+ ` разброс=${(shot.spread * 180 / Math.PI).toFixed(2)}°,`
+	+ ` отклонение=${angleDeviationDeg.toFixed(2)}°,`
+	+ ` точность=${accuracyEnabled}`);
 
     const stoneIndex = stones.indexOf(stone);
     const move: ShotData = {
         strikerIndex: stoneIndex,
-        force: force,
-        angle: finalAngle,
+        force: shot.force,
+        angle: shot.angle,
         playerIndex: 1
     };
 

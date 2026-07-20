@@ -7,6 +7,8 @@
 import { Stone } from "../stone.js";
 import { FreeCorridor, normalizeAngle, angleRangeWidth, isAngleInRange } from "./geometry.js";
 import { DEBUG_AI, DEBUG_GOAL, DEBUG_CANDIDATES } from "../debug.js";
+import { STOP_THRESHOLD_RATIO } from "../state.js";
+import { forceForDistance, distanceForForce, spreadAtForce } from "../simulation/kinematics.js";
 
 export interface GoalEvaluation {
 	isPossible: boolean;
@@ -112,7 +114,7 @@ export function evaluateGoalPossibility(
 
 	const K = -Math.log(friction);
 	const threshold = 0.02 * R;
-	const forceMin = dTarget * K + threshold;
+	const forceMin = forceForDistance(dTarget, R, friction, STOP_THRESHOLD_RATIO);
 	const forceMax = maxForce;
 
 	if (forceMin > forceMax) {
@@ -126,8 +128,7 @@ export function evaluateGoalPossibility(
 	let confidence = 1.0;
 	if (!accuracyEnabled) {
 		const avgForce = (forceMin + forceMax) / 2;
-		const spreadAtForce = Math.pow(avgForce / maxForce, 2) * spreadFactor;
-		const effectiveSpread = 2 * spreadAtForce;
+		const effectiveSpread = 2 * spreadAtForce(avgForce, maxForce, spreadFactor);
 		if (goalCorridorWidth < effectiveSpread) {
 			confidence = 0;
 		} else {
@@ -166,7 +167,7 @@ export function isGoalShot(
 
 	const K = -Math.log(friction);
 	const threshold = 0.02 * striker.radius;
-	const dMax = (force - threshold) / K;
+	const dMax = distanceForForce(force, striker.radius, friction, STOP_THRESHOLD_RATIO);
 
 	const dirX = Math.cos(angle);
 	const dirY = Math.sin(angle);
