@@ -57,7 +57,7 @@ export let aiThinkingTime = 60;
 export let alternateStriker = false;
 
 export let forceSteps = 6;
-export let angleSteps = 5;
+export let angleSteps = 6;
 export let goalConfidenceThreshold = 0.5;
 
 export const FORCE_FACTOR = 0.04;
